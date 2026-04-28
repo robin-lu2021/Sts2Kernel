@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -c \"\\\\.cs$\")",
+      "Bash(python fix_async_task.py)",
+      "Bash(python fix_power_inherit.py)",
+      "Bash(python fix_powers_task.py)",
+      "Bash(python fix_monster_inherit.py)",
+      "Bash(python remove_trigger_anim.py)",
+      "Bash(python remove_monster_trigger_anim.py)",
+      "Bash(python remove_generate_animator.py)",
+      "Bash(dotnet build *)",
+      "Bash(python fix_card_inherit.py)",
+      "Bash(python fix_events_card.py)",
+      "Bash(python fix_kernel_card.py)",
+      "Bash(python fix_kernel_relic.py)",
+      "Bash(python fix_kernel_monster.py)"
+    ]
+  }
+}

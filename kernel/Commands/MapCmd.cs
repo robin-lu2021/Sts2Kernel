@@ -1,0 +1,13 @@
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.TestSupport;
+
+namespace MegaCrit.Sts2.Core.Commands;
+
+public static class MapCmd
+{
+	public static void SetBossEncounter(IRunState runState, EncounterModel boss)
+	{
+		runState.Act.SetBossEncounter(boss);
+	}
+}

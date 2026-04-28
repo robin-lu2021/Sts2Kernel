@@ -1,0 +1,59 @@
+using System;
+using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.TestSupport;
+
+namespace MegaCrit.Sts2.Core.Models.Enchantments;
+
+public sealed class Slither : EnchantmentModel
+{
+	private int _testEnergyCostOverride = -1;
+
+	public int TestEnergyCostOverride
+	{
+		get
+		{
+			return _testEnergyCostOverride;
+		}
+		set
+		{
+			if (TestMode.IsOff)
+			{
+				throw new InvalidOperationException("Only set this value in test mode.");
+			}
+			AssertMutable();
+			_testEnergyCostOverride = value;
+		}
+	}
+
+	public override bool CanEnchant(CardModel card)
+	{
+		if (base.CanEnchant(card) && !card.Keywords.Contains(CardKeyword.Unplayable))
+		{
+			return !card.EnergyCost.CostsX;
+		}
+		return false;
+	}
+
+	public override void AfterCardDrawn(PlayerChoiceContext choiceContext, CardModel card, bool fromHandDraw)
+	{
+		if (card != base.Card)
+		{
+			return;
+		}
+		if (base.Card.Pile.Type != PileType.Hand)
+		{
+			return;
+		}
+		base.Card.EnergyCost.SetThisCombat(NextEnergyCost());
+	}
+
+	private int NextEnergyCost()
+	{
+		if (TestEnergyCostOverride >= 0)
+		{
+			return TestEnergyCostOverride;
+		}
+		return base.Card.Owner.RunState.Rng.CombatEnergyCosts.NextInt(4);
+	}
+}

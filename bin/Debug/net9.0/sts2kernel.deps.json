@@ -1,0 +1,66 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "sts2kernel/1.0.0": {
+        "dependencies": {
+          "SmartFormat": "3.0.0.0",
+          "System.IO.Hashing": "9.0.0.0"
+        },
+        "runtime": {
+          "sts2kernel.dll": {}
+        }
+      },
+      "SmartFormat/3.0.0.0": {
+        "runtime": {
+          "SmartFormat.dll": {
+            "assemblyVersion": "3.0.0.0",
+            "fileVersion": "3.3.0.704"
+          }
+        }
+      },
+      "System.IO.Hashing/9.0.0.0": {
+        "runtime": {
+          "System.IO.Hashing.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.24.52809"
+          }
+        }
+      },
+      "SmartFormat.ZString/3.0.0.0": {
+        "runtime": {
+          "SmartFormat.ZString.dll": {
+            "assemblyVersion": "3.0.0.0",
+            "fileVersion": "3.3.0.704"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "sts2kernel/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SmartFormat/3.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "System.IO.Hashing/9.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SmartFormat.ZString/3.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

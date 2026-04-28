@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(C:\\ZZZZZZ\\03_python\\24_FastTheSpire2\\sts2code2\\src\\Core/**)"
+    ]
+  }
+}

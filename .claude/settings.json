@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python remove_cmd_wait.py)",
+      "Bash(python remove_cmd_scaledwait.py)"
+    ]
+  }
+}

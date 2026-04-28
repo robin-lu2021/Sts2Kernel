@@ -1,0 +1,29 @@
+using MegaCrit.Sts2.Core;
+using System.Collections.Generic;
+using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+
+namespace MegaCrit.Sts2.Core.Models.Cards;
+
+public sealed class DeprecatedCard : CardModel
+{
+	public override int MaxUpgradeLevel => 0;
+
+	public override IEnumerable<CardKeyword> CanonicalKeywords => new global::_003C_003Ez__ReadOnlySingleElementList<CardKeyword>(CardKeyword.Exhaust);
+
+	public DeprecatedCard()
+		: base(0, CardType.Status, CardRarity.Status, TargetType.None)
+	{
+	}
+
+	protected override void OnPlay(PlayerChoiceContext choiceContext, CardPlay cardPlay)
+	{
+		CardPileCmd.Draw(choiceContext, 1m, base.Owner);
+		if (base.DeckVersion != null)
+		{
+			CardPileCmd.RemoveFromDeck(base.DeckVersion);
+			base.DeckVersion = null;
+		}
+	}
+}

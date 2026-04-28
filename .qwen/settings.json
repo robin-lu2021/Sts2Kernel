@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(C:\\ZZZZZZ\\03_python\\24_FastTheSpire2\\sts2code2\\src\\Core/**)",
+      "Read(C:\\ZZZZZZ\\03_python\\24_FastTheSpire2\\sts2code2\\src\\Core\\Random/**)",
+      "Read(C:\\ZZZZZZ\\03_python\\24_FastTheSpire2\\sts2code2\\src\\Core\\Combat/**)"
+    ]
+  },
+  "$version": 3
+}

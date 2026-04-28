@@ -1,0 +1,136 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Hooks;
+using MegaCrit.Sts2.Core.HoverTips;
+using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Random;
+using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Saves.Runs;
+
+namespace MegaCrit.Sts2.Core.Rewards;
+
+public abstract class Reward
+{
+	protected Rng? _rngOverride;
+
+	public Player Player { get; }
+
+	protected abstract RewardType RewardType { get; }
+
+	public abstract int RewardsSetIndex { get; }
+
+	public abstract LocString Description { get; }
+
+	public abstract bool IsPopulated { get; }
+
+	protected virtual string? IconPath => null;
+
+	public virtual (float X, float Y) IconPosition => (0f, 0f);
+
+	protected virtual IEnumerable<IHoverTip> ExtraHoverTips => Array.Empty<IHoverTip>();
+
+	public virtual IEnumerable<IHoverTip> HoverTips
+	{
+		get
+		{
+			List<IHoverTip> list = ExtraHoverTips.ToList();
+			if (ParentRewardSet != null)
+			{
+				list.Add(LinkedRewardSet.HoverTip);
+			}
+			return list;
+		}
+	}
+
+	public LinkedRewardSet? ParentRewardSet { get; set; }
+
+	protected Reward(Player player)
+	{
+		Player = player;
+	}
+
+	public abstract void Populate();
+
+	protected abstract bool OnSelect();
+
+	public virtual object? CreateIcon()
+	{
+		return null;
+	}
+
+	public virtual void OnSkipped()
+	{
+	}
+
+	public bool OnSelectWrapper()
+	{
+		bool success = OnSelect();
+		if (success)
+		{
+			Hook.AfterRewardTaken(Player.RunState, Player, this);
+		}
+		if (ParentRewardSet != null)
+		{
+			ParentRewardSet.RemoveReward(this);
+			ParentRewardSet.OnSelect();
+		}
+		return success;
+	}
+
+	public abstract void MarkContentAsSeen();
+
+	public virtual SerializableReward ToSerializable()
+	{
+		return new SerializableReward
+		{
+			RewardType = RewardType
+		};
+	}
+
+	public Reward SetRng(Rng rng)
+	{
+		_rngOverride = rng;
+		return this;
+	}
+
+	public static Reward FromSerializable(SerializableReward save, Player player)
+	{
+		switch (save.RewardType)
+		{
+		case RewardType.RemoveCard:
+			return new CardRemovalReward(player);
+		case RewardType.SpecialCard:
+		{
+			CardModel cardModel = CardModel.FromSerializable(save.SpecialCard);
+			player.RunState.AddCard(cardModel, player);
+			SpecialCardReward specialCardReward = new SpecialCardReward(cardModel, player);
+			if (save.CustomDescriptionEncounterSourceId != ModelId.none)
+			{
+				specialCardReward.SetCustomDescriptionEncounterSource(save.CustomDescriptionEncounterSourceId);
+			}
+			return specialCardReward;
+		}
+		case RewardType.Gold:
+			return new GoldReward(save.GoldAmount, player, save.WasGoldStolenBack);
+		case RewardType.Potion:
+			return new PotionReward(player);
+		case RewardType.Relic:
+			if (save.PredeterminedModelId != ModelId.none)
+			{
+				return new RelicReward(ModelDb.GetById<RelicModel>(save.PredeterminedModelId).ToMutable(), player);
+			}
+			return new RelicReward(player);
+		case RewardType.Card:
+		{
+			CardCreationOptions options = new CardCreationOptions(save.CardPoolIds.Select(ModelDb.GetById<CardPoolModel>), save.Source, save.RarityOdds);
+			return new CardReward(options, save.OptionCount, player);
+		}
+		default:
+			throw new NotImplementedException("Serializing these types of rewards hasn't been implemented yet");
+		}
+	}
+}
