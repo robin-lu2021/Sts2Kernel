@@ -72,3 +72,4 @@ Testing/
 .godot/
 .kernel_user_data/
 .qwen/
+bin/
