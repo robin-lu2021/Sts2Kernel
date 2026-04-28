@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("sts2kernel")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+fbd5885ab2dd8969a95c5a5062460cae39bdef7a")]
 [assembly: System.Reflection.AssemblyProductAttribute("sts2kernel")]
 [assembly: System.Reflection.AssemblyTitleAttribute("sts2kernel")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

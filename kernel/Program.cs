@@ -27,33 +27,26 @@ public static class Program
 
 	public static void Write(string message)
 	{
-		if (_pipe != null)
-		{
-			_pipe.SendTextOutput(message);
-		}
-		else
-		{
-			_logWriter?.Invoke(message);
-		}
+		_logWriter?.Invoke(message);
+		_pipe?.SendTextOutput(message);
 	}
 
 	public static void Prompt(string message)
 	{
-		if (_pipe != null)
-		{
-			_pipe.SendPromptInput(message);
-		}
-		else
-		{
-			_promptWriter?.Invoke(message);
-		}
+		_promptWriter?.Invoke(message);
+		_pipe?.SendPromptInput(message);
 	}
 
 	public static string? ReadLine()
 	{
 		if (_pipe != null)
 		{
-			return _pipe.ReadInputResponse();
+			string? input = _pipe.ReadInputResponse();
+			if (input != null)
+			{
+				_logWriter?.Invoke(input);
+			}
+			return input;
 		}
 		return _reader?.Invoke();
 	}

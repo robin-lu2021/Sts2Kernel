@@ -131,8 +131,8 @@ public class myEventOption
 		{
 			throw new ArgumentNullException(nameof(eventModel));
 		}
-		LocString title = eventModel.GetOptionTitle(textKey) ?? LocString.GetIfExists("relics", relic.Id + ".title") ?? eventModel.Title;
-		LocString description = eventModel.GetOptionDescription(textKey) ?? LocString.GetIfExists("relics", relic.Id + ".description") ?? eventModel.InitialDescription;
+		LocString title = eventModel.GetOptionTitle(textKey) ?? relic.Title;
+		LocString description = eventModel.GetOptionDescription(textKey) ?? relic.DynamicDescription;
 		return new myEventOption(eventModel, onChosen, title, description, textKey).WithRelic(relic);
 	}
 

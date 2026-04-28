@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\sts2kernel103\\sts2kernel.csproj": {}
+    "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\Sts2Kernel\\sts2kernel.csproj": {}
   },
   "projects": {
-    "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\sts2kernel103\\sts2kernel.csproj": {
+    "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\Sts2Kernel\\sts2kernel.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\sts2kernel103\\sts2kernel.csproj",
+        "projectUniqueName": "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\Sts2Kernel\\sts2kernel.csproj",
         "projectName": "sts2kernel",
-        "projectPath": "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\sts2kernel103\\sts2kernel.csproj",
+        "projectPath": "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\Sts2Kernel\\sts2kernel.csproj",
         "packagesPath": "C:\\Users\\11631\\.nuget\\packages\\",
-        "outputPath": "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\sts2kernel103\\obj\\",
+        "outputPath": "C:\\ZZZZZZ\\03_python\\34_mySts2Kernel\\Sts2Kernel\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\11631\\AppData\\Roaming\\NuGet\\NuGet.Config",

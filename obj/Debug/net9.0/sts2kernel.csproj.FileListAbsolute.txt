@@ -11,18 +11,8 @@ C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\sts2kernel.deps.
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\sts2kernel.runtimeconfig.json
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\sts2kernel.dll
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\sts2kernel.pdb
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\0Harmony.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\JetBrains.Annotations.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\MonoMod.Backports.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\Sentry.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\SharpGen.Runtime.COM.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\SharpGen.Runtime.dll
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\SmartFormat.dll
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\System.IO.Hashing.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\Vortice.DirectX.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\Vortice.DXGI.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\Vortice.Mathematics.dll
-C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\MonoMod.ILHelpers.dll
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\bin\Debug\net9.0\SmartFormat.ZString.dll
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\obj\Debug\net9.0\sts2kernel.csproj.Up2Date
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel\obj\Debug\net9.0\sts2kernel.genruntimeconfig.cache
@@ -560,3 +550,4 @@ C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel103\bin\Debug\net9.0\SmartFormat.Z
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel103\obj\Debug\net9.0\sts2kernel.csproj.Up2Date
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel103\obj\Debug\net9.0\sts2kernel.genruntimeconfig.cache
 C:\ZZZZZZ\03_python\34_mySts2Kernel\sts2kernel103\obj\Debug\net9.0\ref\sts2kernel.dll
+C:\ZZZZZZ\03_python\34_mySts2Kernel\Sts2Kernel\obj\Debug\net9.0\sts2kernel.sourcelink.json

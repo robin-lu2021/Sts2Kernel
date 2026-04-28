@@ -122,6 +122,8 @@ public static class myHeadlessRewardRuntime
 
 	private static readonly FieldInfo? _specialCardRewardField = typeof(SpecialCardReward).GetField("_card", BindingFlags.Instance | BindingFlags.NonPublic);
 
+	public static Action<myPendingRewardState>? OfferedRewardsSink { get; set; }
+
 	public static myPendingRewardState CreateCombatRewards(Player player, RunState runState, myCombatSession session)
 	{
 		if (player == null)
@@ -250,6 +252,29 @@ public static class myHeadlessRewardRuntime
 
 		List<myPendingRewardEntry> entries = TranslateRewards(player, rewards);
 		return new myPendingRewardState("Rest site results", entries);
+	}
+
+	public static bool TryCaptureOfferedRewards(Player player, AbstractRoom? room, IEnumerable<Reward> rewards, bool disallowSkipping = false)
+	{
+		Action<myPendingRewardState>? sink = OfferedRewardsSink;
+		if (sink == null)
+		{
+			return false;
+		}
+
+		List<myPendingRewardEntry> entries = TranslateRewards(player, rewards);
+		if (entries.Count == 0)
+		{
+			return false;
+		}
+
+		if (disallowSkipping)
+		{
+			entries = entries.Select(CloneAsNonSkippable).ToList();
+		}
+
+		sink(new myPendingRewardState(BuildOfferSourceLabel(room), entries));
+		return true;
 	}
 
 	public static string ApplyReward(Player player, myPendingRewardEntry entry, int cardOptionZeroBased = -1)
@@ -432,6 +457,36 @@ public static class myHeadlessRewardRuntime
 	private static IEnumerable<myPendingRewardEntry> TranslateExtraRewards(Player player, myCombatSession session)
 	{
 		return TranslateRewards(player, session.ExtraRewards);
+	}
+
+	private static myPendingRewardEntry CloneAsNonSkippable(myPendingRewardEntry entry)
+	{
+		return new myPendingRewardEntry
+		{
+			Kind = entry.Kind,
+			Label = entry.Label,
+			GoldAmount = entry.GoldAmount,
+			Potion = entry.Potion,
+			Relic = entry.Relic,
+			Cards = entry.Cards,
+			CanSkip = false
+		};
+	}
+
+	private static string BuildOfferSourceLabel(AbstractRoom? room)
+	{
+		if (room == null)
+		{
+			return "Custom rewards";
+		}
+
+		return room switch
+		{
+			CombatRoom combatRoom when combatRoom.Encounter != null => $"Combat rewards for {combatRoom.Encounter.Id.Entry}",
+			TreasureRoom treasureRoom => $"Treasure rewards for act {treasureRoom.ActIndex + 1}",
+			EventRoom eventRoom => $"Event rewards for {eventRoom.CanonicalEvent.Id}",
+			_ => $"{room.RoomType} rewards"
+		};
 	}
 
 	private static List<myPendingRewardEntry> TranslateRewards(Player player, IEnumerable<Reward> rewards)

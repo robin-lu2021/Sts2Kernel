@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Saves.Managers;
@@ -42,12 +44,41 @@ public sealed class myBinaryPipeHandler : IDisposable
 
 	public myBinaryPipeHandler(string pipeName)
 	{
-		_pipe = new NamedPipeServerStream(
+		_pipe = CreatePipeServer(pipeName);
+	}
+
+	private static NamedPipeServerStream CreatePipeServer(string pipeName)
+	{
+		PipeSecurity security = new();
+
+		SecurityIdentifier? currentUserSid = WindowsIdentity.GetCurrent().User;
+		if (currentUserSid != null)
+		{
+			security.AddAccessRule(new PipeAccessRule(
+				currentUserSid,
+				PipeAccessRights.FullControl,
+				AccessControlType.Allow));
+		}
+
+		security.AddAccessRule(new PipeAccessRule(
+			new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+			PipeAccessRights.ReadWrite,
+			AccessControlType.Allow));
+
+		security.AddAccessRule(new PipeAccessRule(
+			new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+			PipeAccessRights.ReadWrite,
+			AccessControlType.Allow));
+
+		return NamedPipeServerStreamAcl.Create(
 			pipeName,
 			PipeDirection.InOut,
 			1,
 			PipeTransmissionMode.Byte,
-			PipeOptions.None);
+			PipeOptions.None,
+			0,
+			0,
+			security);
 	}
 
 	public void WaitForConnection()

@@ -116,10 +116,6 @@ public class RewardsSet
 		{
 			Log.Warn("Some rewards are populated and others are not when calling RewardsCmd.Offer! This might lead to hooks getting called twice");
 		}
-		if (!LocalContext.IsMe(Player))
-		{
-			return;
-		}
 		if (TestMode.IsOn)
 		{
 			if (testSelector != null)
@@ -131,6 +127,15 @@ public class RewardsSet
 			{
 				await reward.OnSelectWrapper();
 			}
+			return;
+		}
+		if (MegaCrit.Sts2.Core.myHeadlessRewardRuntime.TryCaptureOfferedRewards(Player, Room, Rewards, _disallowSkipping))
+		{
+			return;
+		}
+		if (!LocalContext.IsMe(Player))
+		{
+			return;
 		}
 	}
 

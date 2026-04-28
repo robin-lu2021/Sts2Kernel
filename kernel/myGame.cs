@@ -105,6 +105,16 @@ public class myGame
 		public int SecondaryIndex { get; init; } = -1;
 	}
 
+	private sealed class NewRunRequestedException : Exception
+	{
+		public string? Seed { get; }
+
+		public NewRunRequestedException(string? seed = null)
+		{
+			Seed = seed;
+		}
+	}
+
 	private enum CombatPromptKind
 	{
 		Card,
@@ -207,6 +217,7 @@ public class myGame
 		{
 			_cli.SetPipeHandler(_pipe);
 		}
+		myHeadlessRewardRuntime.OfferedRewardsSink = state => PendingRewards = state;
 	}
 
 	public void RunInteractiveLoop(string? seed = null, bool replaceTreasureWithElites = false, InteractionChannel channel = InteractionChannel.CommandLine)
@@ -215,21 +226,24 @@ public class myGame
 		_interactiveExitRequested = false;
 		_replaceTreasureWithElites = replaceTreasureWithElites;
 		showImportant("sts2kernel command line mode", channel);
-		try
-		{
-			StartOrLoadRun(seed, replaceTreasureWithElites, channel);
-		}
-		catch (OperationCanceledException)
+		if (!BeginRunSession(seed, allowLoadPrompt: true, channel))
 		{
 			return;
 		}
-		showImportant("Run initialized. Enter the shown option number to act. Global queries: m/map, c/deck, hp, g, combat, help. Type exit to quit.", channel);
-		showOtherInfo("state", channel);
+		ShowRunInitialized(channel);
 		while (State != GameState.RunEnded && !_interactiveExitRequested)
 		{
 			try
 			{
 				PromptForCurrentState(channel);
+			}
+			catch (NewRunRequestedException ex)
+			{
+				if (!BeginRunSession(ex.Seed, allowLoadPrompt: false, channel))
+				{
+					return;
+				}
+				ShowRunInitialized(channel);
 			}
 			catch (OperationCanceledException)
 			{
@@ -290,7 +304,42 @@ public class myGame
 	private void StartNewRun(string? seed, bool replaceTreasureWithElites, InteractionChannel channel)
 	{
 		getCharacter(seed, channel);
-		getMap(replaceTreasureWithElites, channel);
+		getMap(replaceTreasureWithElites, showAvailablePaths: false, channel: channel);
+		EnterStartingPoint(channel);
+	}
+
+	private bool BeginRunSession(string? seed, bool allowLoadPrompt, InteractionChannel channel)
+	{
+		while (true)
+		{
+			try
+			{
+				if (allowLoadPrompt)
+				{
+					StartOrLoadRun(seed, _replaceTreasureWithElites, channel);
+				}
+				else
+				{
+					StartNewRun(seed, _replaceTreasureWithElites, channel);
+				}
+				return true;
+			}
+			catch (NewRunRequestedException ex)
+			{
+				seed = ex.Seed;
+				allowLoadPrompt = false;
+			}
+			catch (OperationCanceledException)
+			{
+				return false;
+			}
+		}
+	}
+
+	private void ShowRunInitialized(InteractionChannel channel)
+	{
+		showImportant("Run initialized. Enter the shown option number to act. Global queries: m/map, c/deck, hp, g, combat, help, new. Type exit to quit.", channel);
+		showOtherInfo("state", channel);
 	}
 
 	private void LoadSavedRun(SerializableRun save, bool replaceTreasureWithElites, InteractionChannel channel)
@@ -380,10 +429,12 @@ public class myGame
 		showOption(characters.Select(BuildCharacterOption), channel);
 		int selectedIndex = getOption(channel) - 1;
 		CharacterModel selectedCharacter = characters[selectedIndex];
-		Seed = NormalizeSeed(seed);
+		int selectedAscensionLevel = ResolveNewRunAscension(channel);
+		string resolvedSeed = ResolveNewRunSeed(seed, channel);
+		Seed = resolvedSeed;
 		RunRng = new RunRngSet(Seed);
 		SelectedCharacterModel = selectedCharacter;
-		SelectedAscensionLevel = 0;
+		SelectedAscensionLevel = selectedAscensionLevel;
 		LocalContext.NetId = _localPlayerNetId;
 		RunState = null;
 		RunManager = null;
@@ -395,12 +446,12 @@ public class myGame
 		_restActionTaken = false;
 		CurrentRoomState = RoomState.None;
 		State = GameState.RunSetup;
-		showImportant($"Selected {GetCharacterName(selectedCharacter)} with seed {Seed}.", channel);
+		showImportant($"Selected {GetCharacterName(selectedCharacter)} | Ascension {SelectedAscensionLevel} | Seed {Seed}.", channel);
 		showImportant(BuildCharacterSummary(selectedCharacter), channel);
 		return selectedCharacter;
 	}
 
-	public ActMap getMap(bool replaceTreasureWithElites = false, InteractionChannel channel = InteractionChannel.CommandLine)
+	public ActMap getMap(bool replaceTreasureWithElites = false, bool showAvailablePaths = true, InteractionChannel channel = InteractionChannel.CommandLine)
 	{
 		EnsureInitialized();
 		if (MapInstance != null)
@@ -427,7 +478,10 @@ public class myGame
 		State = GameState.OnMap;
 		SaveManager.Instance.SaveRun(null);
 		showImportant($"Generated map for act {GetActName(runState.Act.SourceAct)}.", channel);
-		ShowAvailablePaths(channel);
+		if (showAvailablePaths)
+		{
+			ShowAvailablePaths(channel);
+		}
 		return MapInstance;
 	}
 
@@ -569,6 +623,41 @@ public class myGame
 	{
 		string resolvedSeed = string.IsNullOrWhiteSpace(seed) ? SeedHelper.GetRandomSeed() : seed;
 		return SeedHelper.CanonicalizeSeed(resolvedSeed);
+	}
+
+	private string ResolveNewRunSeed(string? seed, InteractionChannel channel)
+	{
+		if (!string.IsNullOrWhiteSpace(seed))
+		{
+			return NormalizeSeed(seed);
+		}
+
+		string? input = ReadInput("Enter seed (leave blank for random): ", channel);
+		if (input == null)
+		{
+			throw new OperationCanceledException("Interactive input ended before the seed was entered.");
+		}
+
+		string trimmed = input.Trim().TrimStart('\uFEFF');
+		return trimmed.Length == 0 ? NormalizeSeed(null) : NormalizeSeed(trimmed);
+	}
+
+	private int ResolveNewRunAscension(InteractionChannel channel)
+	{
+		showImportant("Choose ascension level:", channel);
+		List<myCliChoice> choices = Enumerable.Range(0, 11).Select((int level) => new myCliChoice
+		{
+			Key = level.ToString(),
+			Index = level,
+			Text = $"Ascension {level}",
+			Payload = level
+		}).ToList();
+		myCliChoice? choice = PromptChoice("Choose ascension (0-10): ", choices, channel);
+		if (choice?.Payload is not int ascensionLevel)
+		{
+			throw new OperationCanceledException("Interactive input ended before the ascension level was selected.");
+		}
+		return ascensionLevel;
 	}
 
 	private void HandleCommand(string? message, InteractionChannel channel)
@@ -749,6 +838,9 @@ public class myGame
 				ReloadSave(channel);
 				_globalCommandBreak = true;
 				return null;
+			case "new":
+				showImportant("Starting a new game.", channel);
+				throw new NewRunRequestedException();
 			case "act":
 				ShowAct(channel);
 				return true;
@@ -767,6 +859,10 @@ public class myGame
 			default:
 				return false;
 			}
+		}
+		catch (NewRunRequestedException)
+		{
+			throw;
 		}
 		catch (Exception ex)
 		{
@@ -1568,6 +1664,7 @@ public class myGame
 		WriteLine("c / hp / g / a / q / w: print deck, HP, gold, and draw/discard/exhaust piles", channel);
 		WriteLine("r / relic: print current relics", channel);
 		WriteLine("sl: reload the save file", channel);
+		WriteLine("new: abandon the current run state and start a new game from character selection", channel);
 		WriteLine("choose <index>: execute the current event option", channel);
 		WriteLine("combat: print the live combat summary with hand, targets, potions, and intents", channel);
 		WriteLine("play <handIndex> [targetIndex]: play a card from hand through the combat engine", channel);

@@ -107,7 +107,7 @@ public class RelicGrabBag
 
 	public RelicModel? PullFromFront(RelicRarity rarity, Func<RelicModel, bool> filter, IRunState runState)
 	{
-		List<RelicModel> availableDeque = GetAvailableDeque(rarity, runState, null);
+		List<RelicModel> availableDeque = GetAvailableDeque(rarity, runState, filter);
 		if (availableDeque == null || availableDeque.Count == 0)
 		{
 			return null;

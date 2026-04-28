@@ -51,6 +51,7 @@ public sealed class myCliInteraction
 	{
 		if (IsPipe)
 		{
+			_writer(message);
 			_pipe!.SendTextOutput(message);
 			return;
 		}
@@ -66,8 +67,14 @@ public sealed class myCliInteraction
 	{
 		if (IsPipe)
 		{
+			_promptWriter(prompt);
 			_pipe!.SendPromptInput(prompt);
-			return _pipe!.ReadInputResponse();
+			string? input = _pipe!.ReadInputResponse();
+			if (input != null)
+			{
+				_writer(input);
+			}
+			return input;
 		}
 		_promptWriter(prompt);
 		return _reader();
@@ -96,13 +103,11 @@ public sealed class myCliInteraction
 		{
 			_pipe!.SendShowChoices(_currentOptions);
 		}
-		else
+
+		for (int i = 0; i < _currentOptions.Count; i++)
 		{
-			for (int i = 0; i < _currentOptions.Count; i++)
-			{
-				myCliChoice choice = _currentOptions[i];
-				_writer($"{choice.Key}: {choice.Text}");
-			}
+			myCliChoice choice = _currentOptions[i];
+			_writer($"{choice.Key}: {choice.Text}");
 		}
 		LogOptions();
 	}
