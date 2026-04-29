@@ -23,7 +23,7 @@ public class MoveToMapCoordAction : GameAction
 		_destination = destination;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		RunManager.Instance.EnterMapCoord(_destination);
 		return Task.CompletedTask;

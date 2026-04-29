@@ -115,7 +115,7 @@ public class ActionExecutor
 				if (NonInteractiveMode.IsActive)
 				{
 					CurrentlyRunningAction = readyAction;
-					readyAction.Execute().GetAwaiter().GetResult();
+					readyAction.Execute();
 					AfterActionFinished(readyAction);
 				}
 				else
@@ -123,15 +123,7 @@ public class ActionExecutor
 					CurrentlyRunningAction = readyAction;
 					readyAction.JustBeforeFinished += JustBeforeActionFinished;
 					readyAction.AfterFinished += AfterActionFinished;
-					Task actionTask = readyAction.Execute();
-					while (!actionTask.IsCompleted && !_actionCancelToken.IsCancellationRequested)
-					{
-						Thread.Sleep(1);
-					}
-					if (actionTask.IsFaulted)
-					{
-						Log.Error($"GameAction {readyAction} completed with exception: {actionTask.Exception}");
-					}
+					readyAction.Execute();
 				}
 				bool isInProgress = CombatManager.Instance.IsInProgress;
 				bool flag = isInProgress;

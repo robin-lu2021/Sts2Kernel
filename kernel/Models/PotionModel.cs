@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -168,6 +169,9 @@ public abstract class PotionModel : AbstractModel
 		BeforeUse?.Invoke();
 		UsePotionAction action = new UsePotionAction(this, target, CombatManager.Instance.IsInProgress);
 		IsQueued = true;
+		
+		// Task t = action.ExecuteAction();
+		// t.Wait();
 		RunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(action);
 	}
 

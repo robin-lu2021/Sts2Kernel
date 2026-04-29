@@ -25,7 +25,7 @@ public class PickRelicAction : GameAction
 		_relicIndex = relicIndex;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		TreasureRoomRelicSynchronizer treasureRoomRelicSynchronizer = TestSynchronizer ?? RunManager.Instance.TreasureRoomRelicSynchronizer;
 		treasureRoomRelicSynchronizer.OnPicked(_player, _relicIndex);

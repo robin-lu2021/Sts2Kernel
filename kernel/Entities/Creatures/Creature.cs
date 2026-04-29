@@ -363,7 +363,6 @@ public class Creature
 		int currentHp = CurrentHp;
 		int num = (int)Math.Min(amount, 999999999m);
 		CurrentHp = Math.Max(CurrentHp - num, 0);
-		CurrentHp = Math.Max(CurrentHp - (int)amount, 0);
 		return new DamageResult(this, props)
 		{
 			UnblockedDamage = currentHp - CurrentHp,

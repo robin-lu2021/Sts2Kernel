@@ -1,9 +1,12 @@
 using System;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Saves.Runs;
 
 namespace MegaCrit.Sts2.Core.Models;
 
+[JsonConverter(typeof(ModelIdRunSaveConverter))]
 public record ModelId : IComparable<ModelId>
 {
 	public string Category { get; }

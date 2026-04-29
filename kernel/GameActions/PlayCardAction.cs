@@ -53,7 +53,7 @@ public sealed class PlayCardAction : GameAction
 		TargetId = targetId;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		_card = NetCombatCard.ToCardModel();
 		Creature target = Player.Creature.CombatState.GetCreature(TargetId);

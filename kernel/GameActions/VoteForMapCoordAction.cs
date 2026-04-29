@@ -26,7 +26,7 @@ public class VoteForMapCoordAction : GameAction
 		_destination = destination;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		RunManager.Instance.MapSelectionSynchronizer.PlayerVotedForMapCoord(_player, _source, _destination);
 		return Task.CompletedTask;

@@ -46,7 +46,7 @@ public class GenericHookGameAction : GameAction
 		_choiceContextSetSource.SetResult();
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		_choiceContextSetSource.Task.GetAwaiter().GetResult();
 		_executionStartedSource.SetResult();

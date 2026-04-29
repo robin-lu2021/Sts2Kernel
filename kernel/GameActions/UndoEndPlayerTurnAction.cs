@@ -24,7 +24,7 @@ public class UndoEndPlayerTurnAction : GameAction
 		_combatRound = combatRound;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		int roundNumber = _player.Creature.CombatState.RoundNumber;
 		if (roundNumber == _combatRound)

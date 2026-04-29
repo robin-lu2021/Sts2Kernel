@@ -1,3 +1,4 @@
+using System;
 using MegaCrit.Sts2.Core;
 using System.Collections.Generic;
 using MegaCrit.Sts2.Core.Commands;

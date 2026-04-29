@@ -68,6 +68,7 @@ public static class CardPileCmd
 
 	public static IReadOnlyList<CardPileAddResult> AddGeneratedCardsToCombat(IEnumerable<CardModel> cards, PileType newPileType, bool addedByPlayer, CardPilePosition position = CardPilePosition.Bottom)
 	{
+		Console.WriteLine("AddGeneratedCardsToCombat called");
 		List<CardModel> list = cards.ToList();
 		if (list.Count == 0 || !CombatManager.Instance.IsInProgress)
 		{
@@ -91,6 +92,7 @@ public static class CardPileCmd
 		{
 			results.Add(Add(card, newPileType.GetPile(card.Owner), position));
 		}
+		Console.WriteLine("AddGeneratedCardsToCombat completed");
 		return results;
 	}
 
@@ -217,6 +219,11 @@ public static class CardPileCmd
 
 			targetPile.AddInternal(addedCard, insertIndex, skipVisuals);
 
+			if (result.oldPile == null && targetPile.IsCombatPile)
+			{
+				Hook.AfterCardEnteredCombat(card.CombatState, card);
+			}
+
 			if (targetPile.Type == PileType.Hand && targetPile != newPile)
 			{
 				ThinkCmd.Play(new LocString("combat_messages", "HAND_FULL"), owningPlayer.Creature, 2.0);
@@ -251,7 +258,14 @@ public static class CardPileCmd
 		{
 			return Array.Empty<CardModel>();
 		}
-
+		if (!Hook.ShouldDraw(player.Creature.CombatState, player, fromHandDraw, out AbstractModel? modifier))
+		{
+			if (modifier != null)
+			{
+				Hook.AfterPreventingDraw(player.Creature.CombatState, modifier);
+			}
+			return Array.Empty<CardModel>();
+		}
 		CombatState combatState = player.Creature.CombatState;
 		List<CardModel> result = new();
 		CardPile hand = PileType.Hand.GetPile(player);
@@ -261,10 +275,15 @@ public static class CardPileCmd
 		{
 			return result;
 		}
-
+		int remainingHandSpace = Math.Max(0, 10 - hand.Cards.Count);
+		if (remainingHandSpace == 0)
+		{
+			CheckIfDrawIsPossibleAndShowThoughtBubbleIfNot(player);
+			return result;
+		}
 		for (int i = 0; i < drawsRequested; i++)
 		{
-			if (hand.Cards.Count >= 10)
+			if (remainingHandSpace <= 0)
 			{
 				break;
 			}
@@ -273,14 +292,21 @@ public static class CardPileCmd
 				break;
 			}
 			ShuffleIfNecessary(choiceContext, player);
-			CardModel? card = drawPile.Cards.OfType<CardModel>().FirstOrDefault();
-			if (card == null)
+			if (!CheckIfDrawIsPossibleAndShowThoughtBubbleIfNot(player))
+			{
+				break;
+			}
+			CardModel? card = drawPile.Cards.FirstOrDefault();
+			if (card == null || hand.Cards.Count >= 10)
 			{
 				break;
 			}
 			result.Add(card);
 			Add(card, hand);
+			CombatManager.Instance.History.CardDrawn(combatState, card, fromHandDraw);
+			Hook.AfterCardDrawn(combatState, choiceContext, card, fromHandDraw);
 			card.InvokeDrawn();
+			remainingHandSpace = Math.Max(0, 10 - hand.Cards.Count);
 		}
 		return result;
 	}
@@ -291,26 +317,46 @@ public static class CardPileCmd
 		{
 			return;
 		}
+		CombatState combatState = player.Creature.CombatState;
 		CardPile drawPile = PileType.Draw.GetPile(player);
 		CardPile discardPile = PileType.Discard.GetPile(player);
-		List<CardModel> list = discardPile.Cards.OfType<CardModel>().ToList();
-		HashSet<CardModel> drawPileCards = drawPile.Cards.OfType<CardModel>().ToHashSet();
+		List<CardModel> list = discardPile.Cards.ToList();
+		HashSet<CardModel> drawPileCards = drawPile.Cards.ToHashSet();
 		foreach (CardModel item in drawPileCards)
 		{
 			drawPile.RemoveInternal(item, silent: true);
 			list.Add(item);
 		}
 		list.StableShuffle(player.RunState.Rng.Shuffle);
+		Hook.ModifyShuffleOrder(combatState, player, list, isInitialShuffle: false);
+		CardModel? forcedTopCard = CombatManager.Instance.DebugForcedTopCardOnNextShuffle;
+		if (forcedTopCard != null)
+		{
+			if (!list.Remove(forcedTopCard))
+			{
+				throw new InvalidOperationException($"Could not find card {forcedTopCard.Id} in discard pile.");
+			}
+			list.Insert(0, forcedTopCard);
+			CombatManager.Instance.DebugClearForcedTopCardOnNextShuffle();
+		}
 		foreach (CardModel item2 in list)
 		{
 			if (!drawPileCards.Contains(item2))
 			{
 				Add(item2, drawPile, skipVisuals: true);
+				if (CombatManager.Instance.IsOverOrEnding)
+				{
+					return;
+				}
 			}
 			else
 			{
 				drawPile.AddInternal(item2, -1, silent: true);
 			}
+		}
+		if (!CombatManager.Instance.IsOverOrEnding)
+		{
+			Hook.AfterShuffle(combatState, choiceContext, player);
 		}
 	}
 

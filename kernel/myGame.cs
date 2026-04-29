@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
@@ -2386,6 +2387,7 @@ public class myGame
 		EnsureActionExecutorReady();
 		using (PushGlobalQueryHandler(channel))
 		{
+			PlayCardAction a = new PlayCardAction(card, target);
 			CoreRunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(new PlayCardAction(card, target));
 			WaitForActionQueueToSettle();
 		}
@@ -2955,6 +2957,22 @@ public class myGame
 		{
 			PendingRewards = null;
 			WriteLine("The chest had no pending rewards.", channel);
+			return;
+		}
+		Player player = RequireActivePlayer();
+		for (int i = PendingRewards.Entries.Count - 1; i >= 0; i--)
+		{
+			myPendingRewardEntry entry = PendingRewards.Entries[i];
+			if (entry.Kind == myPendingRewardKind.Gold && entry.GoldAmount > 0)
+			{
+				PlayerCmd.GainGold(entry.GoldAmount, player).GetAwaiter().GetResult();
+				WriteLine($"Gained {entry.GoldAmount} gold.", channel);
+				PendingRewards.RemoveAt(i);
+			}
+		}
+		if (PendingRewards == null || PendingRewards.IsEmpty)
+		{
+			PendingRewards = null;
 			return;
 		}
 		ShowPendingRewards(channel);

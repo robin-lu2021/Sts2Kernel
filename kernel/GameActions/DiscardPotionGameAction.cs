@@ -38,7 +38,7 @@ public class DiscardPotionGameAction : GameAction
 		WasEnqueuedInCombat = isCombatInProgress;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		if (_potionSlotIndex >= _player.PotionSlots.Count)
 		{

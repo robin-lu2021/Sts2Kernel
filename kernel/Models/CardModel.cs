@@ -20,111 +20,23 @@ using MegaCrit.Sts2.Core.Saves.Runs;
 
 namespace MegaCrit.Sts2.Core;
 
-public sealed class mySerializableCard : IPacketSerializable
-{
-	public string Id { get; set; } = string.Empty;
-
-	public int CurrentUpgradeLevel { get; set; }
-
-	public int FloorAddedToDeck { get; set; }
-
-	public int EnergyCostForTurn { get; set; }
-
-	public int StarCostForTurn { get; set; } = -1;
-
-	public bool IsFreeToPlay { get; set; }
-
-	public bool ExhaustOnPlay { get; set; }
-
-	public bool Retain { get; set; }
-
-	public bool Ethereal { get; set; }
-
-	public bool HasBeenRemovedFromState { get; set; }
-
-	public PileType CurrentPileType { get; set; } = PileType.None;
-
-	public Dictionary<string, string> State { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
-
-	public SerializableCard ToRunSerializable()
-	{
-		return new SerializableCard
-		{
-			Id = string.IsNullOrWhiteSpace(Id) ? null : new ModelId("CARD", Id),
-			CurrentUpgradeLevel = CurrentUpgradeLevel,
-			FloorAddedToDeck = FloorAddedToDeck
-		};
-	}
-
-	public static implicit operator SerializableCard(mySerializableCard save)
-	{
-		return save?.ToRunSerializable() ?? new SerializableCard();
-	}
-
-	public static implicit operator mySerializableCard(SerializableCard save)
-	{
-		return new mySerializableCard
-		{
-			Id = save?.Id?.Entry ?? string.Empty,
-			CurrentUpgradeLevel = save?.CurrentUpgradeLevel ?? 0,
-			FloorAddedToDeck = save?.FloorAddedToDeck ?? 0
-		};
-	}
-
-	public void Serialize(PacketWriter writer)
-	{
-		writer.WriteString(Id);
-		writer.WriteInt(CurrentUpgradeLevel);
-		writer.WriteInt(FloorAddedToDeck);
-		writer.WriteInt(EnergyCostForTurn);
-		writer.WriteInt(StarCostForTurn);
-		writer.WriteBool(IsFreeToPlay);
-		writer.WriteBool(ExhaustOnPlay);
-		writer.WriteBool(Retain);
-		writer.WriteBool(Ethereal);
-		writer.WriteBool(HasBeenRemovedFromState);
-		writer.WriteInt((int)CurrentPileType);
-		writer.WriteInt(State.Count);
-		foreach (KeyValuePair<string, string> pair in State.OrderBy((KeyValuePair<string, string> kvp) => kvp.Key, StringComparer.Ordinal))
-		{
-			writer.WriteString(pair.Key);
-			writer.WriteString(pair.Value);
-		}
-	}
-
-	public void Deserialize(PacketReader reader)
-	{
-		Id = reader.ReadString();
-		CurrentUpgradeLevel = reader.ReadInt();
-		FloorAddedToDeck = reader.ReadInt();
-		EnergyCostForTurn = reader.ReadInt();
-		StarCostForTurn = reader.ReadInt();
-		IsFreeToPlay = reader.ReadBool();
-		ExhaustOnPlay = reader.ReadBool();
-		Retain = reader.ReadBool();
-		Ethereal = reader.ReadBool();
-		HasBeenRemovedFromState = reader.ReadBool();
-		CurrentPileType = (PileType)reader.ReadInt();
-		int count = reader.ReadInt();
-		State = new Dictionary<string, string>(count, StringComparer.Ordinal);
-		for (int i = 0; i < count; i++)
-		{
-			State[reader.ReadString()] = reader.ReadString();
-		}
-	}
-}
-
 public abstract class CardModel : AbstractModel
 {
 	private Player? _owner;
 
 	private DynamicVarSet? _dynamicVars;
 
-	private CardEnergyCost? _energyCost;
-
-	private bool _singleTurnRetain;
-
 	private bool _exhaustOnNextPlay;
+
+	private bool _hasSingleTurnRetain;
+
+	private bool _hasSingleTurnSly;
+
+	private CardModel? _cloneOf;
+
+	private bool _isDupe;
+
+	private CardEnergyCost? _energyCost;
 
 	private int _baseReplayCount;
 
@@ -137,16 +49,6 @@ public abstract class CardModel : AbstractModel
 	private CardModel? _deckVersion;
 
 	private CardModel? _canonicalInstance;
-
-	private CardPoolModel? _pool;
-
-	public virtual string ContentId => Id.Entry;
-
-	public virtual CardType Type { get; }
-
-	public virtual CardRarity Rarity { get; }
-
-	public virtual TargetType TargetType { get; }
 
 	public virtual LocString TitleLocString => new LocString("cards", ContentId + ".title");
 
@@ -166,6 +68,16 @@ public abstract class CardModel : AbstractModel
 			return title + "+";
 		}
 	}
+
+	private CardPoolModel? _pool;
+
+	public virtual string ContentId => Id.Entry;
+
+	public virtual CardType Type { get; }
+
+	public virtual CardRarity Rarity { get; }
+
+	public virtual TargetType TargetType { get; }
 
 	public virtual CardPoolModel Pool
 	{
@@ -288,7 +200,7 @@ public abstract class CardModel : AbstractModel
 		set => _exhaustOnNextPlay = value;
 	}
 
-	public bool ShouldRetainThisTurn => Retain || _singleTurnRetain;
+	public bool ShouldRetainThisTurn => Retain || _hasSingleTurnRetain || CanonicalKeywords.Contains(CardKeyword.Retain);
 
 	public bool IsInCombat => Pile?.IsCombatPile ?? false;
 
@@ -302,7 +214,7 @@ public abstract class CardModel : AbstractModel
 
 	public CardModel CanonicalInstance => !IsMutable ? this : _canonicalInstance ?? this;
 
-	public bool IsClone => IsDupe;
+	public bool IsClone => CloneOf != null;
 
 	public bool IsTransformable => true;
 
@@ -428,6 +340,8 @@ public abstract class CardModel : AbstractModel
 			return false;
 		}
 	}
+
+	public CardModel? CloneOf => _cloneOf;
 
 	public virtual int CanonicalStarCost => -1;
 
@@ -591,7 +505,7 @@ public abstract class CardModel : AbstractModel
 		EnergyCostForTurn = CanonicalEnergyCost;
 		StarCostForTurn = CanonicalStarCost;
 		_exhaustOnNextPlay = false;
-		_singleTurnRetain = false;
+		_hasSingleTurnRetain = false;
 		_singleTurnSly = false;
 	}
 
@@ -630,7 +544,7 @@ public abstract class CardModel : AbstractModel
 
 	public void GiveSingleTurnRetain()
 	{
-		_singleTurnRetain = true;
+		_hasSingleTurnRetain = true;
 	}
 
 	public void GiveSingleTurnSly()
@@ -904,6 +818,10 @@ public abstract class CardModel : AbstractModel
 		return GetStarCostToPay();
 	}
 
+	protected virtual void AddExtraArgsToDescription(LocString description)
+	{
+	}
+
 	public virtual bool CanPlay(out UnplayableReason reason, out AbstractModel? preventer)
 	{
 		preventer = null;
@@ -950,32 +868,27 @@ public abstract class CardModel : AbstractModel
 		return;
 	}
 
-	public CardModel CreateClone()
-	{
-		CardModel clone = (CardModel)MutableClone();
-		clone._dynamicVars = _dynamicVars?.Clone(clone);
-		clone._energyCost = null;
-		clone._enchantment = null;
-		clone._affliction = null;
-		clone._deckVersion = null;
-		clone._canonicalInstance = null;
-		clone.LoadState(SaveState());
-		if (HasOwner)
-		{
-			clone.Owner = Owner;
-		}
-		return clone;
-	}
-
 	public virtual CardModel ToMutable()
 	{
 		if (IsMutable)
 		{
 			return this;
 		}
-		CardModel clone = CreateClone();
+		CardModel clone = (CardModel)MutableClone();
 		clone._canonicalInstance = this;
 		return clone;
+	}
+
+	public CardModel CreateClone()
+	{
+		if (Pile != null && !Pile.Type.IsCombatPile())
+		{
+			throw new InvalidOperationException("Cannot create a clone of a card that is not in a combat pile.");
+		}
+		// AssertMutable();
+		CardModel cardModel = CardScope.CloneCard(this);
+		cardModel._cloneOf = this;
+		return cardModel;
 	}
 
 	public CardModel CreateDupe()
@@ -1002,7 +915,7 @@ public abstract class CardModel : AbstractModel
 		{
 			InvokeEnergyCostChanged();
 		}
-		_singleTurnRetain = false;
+		_hasSingleTurnRetain = false;
 		_singleTurnSly = false;
 	}
 
@@ -1081,6 +994,7 @@ public abstract class CardModel : AbstractModel
 			}
 			if (cs != null && CombatManager.Instance.IsInProgress)
 			{
+				CombatManager.Instance.History.CardPlayFinished(cs, cardPlay);
 				Hook.AfterCardPlayed(cs, choiceContext, cardPlay);
 			}
 			Played?.Invoke();
@@ -1126,34 +1040,48 @@ public abstract class CardModel : AbstractModel
 
 	public void EnchantInternal(EnchantmentModel enchantment, decimal amount)
 	{
+		AssertMutable();
+		enchantment.AssertMutable();
 		_enchantment = enchantment ?? throw new ArgumentNullException(nameof(enchantment));
-		if (_enchantment.Amount != (int)amount)
-		{
-			_enchantment.Amount = (int)amount;
-		}
+		_enchantment.ApplyInternal(this, amount);
 		EnchantmentChanged?.Invoke();
 	}
 
 	public void AfflictInternal(AfflictionModel affliction, decimal amount)
 	{
-		_affliction = affliction ?? throw new ArgumentNullException(nameof(affliction));
-		if (_affliction.Amount != (int)amount)
+		AssertMutable();
+		affliction.AssertMutable();
+		if (_affliction != null)
 		{
-			_affliction.Amount = (int)amount;
+			throw new InvalidOperationException($"Attempted to afflict card {this} that was already afflicted! This is not allowed");
 		}
+		_affliction = affliction ?? throw new ArgumentNullException(nameof(affliction));
+		_affliction.Card = this;
+		_affliction.Amount = (int)amount;
 		AfflictionChanged?.Invoke();
 	}
 
 	public void ClearEnchantmentInternal()
 	{
-		_enchantment = null;
-		EnchantmentChanged?.Invoke();
+		if (_enchantment != null)
+		{
+			AssertMutable();
+			_enchantment.ClearInternal();
+			_enchantment = null;
+			EnchantmentChanged?.Invoke();
+		}
 	}
 
 	public void ClearAfflictionInternal()
 	{
-		_affliction = null;
-		AfflictionChanged?.Invoke();
+		AssertMutable();
+		if (_affliction != null)
+		{
+			_affliction.ClearInternal();
+			_affliction = null;
+			Owner.PlayerCombatState.RecalculateCardValues();
+			AfflictionChanged?.Invoke();
+		}
 	}
 
 	public virtual void AfterTransformedFrom()
@@ -1161,10 +1089,6 @@ public abstract class CardModel : AbstractModel
 	}
 
 	public virtual void AfterTransformedTo()
-	{
-	}
-
-	protected virtual void AddExtraArgsToDescription(LocString description)
 	{
 	}
 
@@ -1377,5 +1301,99 @@ public abstract class CardModel : AbstractModel
 
 	protected virtual void AfterDowngraded()
 	{
+	}
+}
+
+public sealed class mySerializableCard : IPacketSerializable
+{
+	public string Id { get; set; } = string.Empty;
+
+	public int CurrentUpgradeLevel { get; set; }
+
+	public int FloorAddedToDeck { get; set; }
+
+	public int EnergyCostForTurn { get; set; }
+
+	public int StarCostForTurn { get; set; } = -1;
+
+	public bool IsFreeToPlay { get; set; }
+
+	public bool ExhaustOnPlay { get; set; }
+
+	public bool Retain { get; set; }
+
+	public bool Ethereal { get; set; }
+
+	public bool HasBeenRemovedFromState { get; set; }
+
+	public PileType CurrentPileType { get; set; } = PileType.None;
+
+	public Dictionary<string, string> State { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+	public SerializableCard ToRunSerializable()
+	{
+		return new SerializableCard
+		{
+			Id = string.IsNullOrWhiteSpace(Id) ? null : new ModelId("CARD", Id),
+			CurrentUpgradeLevel = CurrentUpgradeLevel,
+			FloorAddedToDeck = FloorAddedToDeck
+		};
+	}
+
+	public static implicit operator SerializableCard(mySerializableCard save)
+	{
+		return save?.ToRunSerializable() ?? new SerializableCard();
+	}
+
+	public static implicit operator mySerializableCard(SerializableCard save)
+	{
+		return new mySerializableCard
+		{
+			Id = save?.Id?.Entry ?? string.Empty,
+			CurrentUpgradeLevel = save?.CurrentUpgradeLevel ?? 0,
+			FloorAddedToDeck = save?.FloorAddedToDeck ?? 0
+		};
+	}
+
+	public void Serialize(PacketWriter writer)
+	{
+		writer.WriteString(Id);
+		writer.WriteInt(CurrentUpgradeLevel);
+		writer.WriteInt(FloorAddedToDeck);
+		writer.WriteInt(EnergyCostForTurn);
+		writer.WriteInt(StarCostForTurn);
+		writer.WriteBool(IsFreeToPlay);
+		writer.WriteBool(ExhaustOnPlay);
+		writer.WriteBool(Retain);
+		writer.WriteBool(Ethereal);
+		writer.WriteBool(HasBeenRemovedFromState);
+		writer.WriteInt((int)CurrentPileType);
+		writer.WriteInt(State.Count);
+		foreach (KeyValuePair<string, string> pair in State.OrderBy((KeyValuePair<string, string> kvp) => kvp.Key, StringComparer.Ordinal))
+		{
+			writer.WriteString(pair.Key);
+			writer.WriteString(pair.Value);
+		}
+	}
+
+	public void Deserialize(PacketReader reader)
+	{
+		Id = reader.ReadString();
+		CurrentUpgradeLevel = reader.ReadInt();
+		FloorAddedToDeck = reader.ReadInt();
+		EnergyCostForTurn = reader.ReadInt();
+		StarCostForTurn = reader.ReadInt();
+		IsFreeToPlay = reader.ReadBool();
+		ExhaustOnPlay = reader.ReadBool();
+		Retain = reader.ReadBool();
+		Ethereal = reader.ReadBool();
+		HasBeenRemovedFromState = reader.ReadBool();
+		CurrentPileType = (PileType)reader.ReadInt();
+		int count = reader.ReadInt();
+		State = new Dictionary<string, string>(count, StringComparer.Ordinal);
+		for (int i = 0; i < count; i++)
+		{
+			State[reader.ReadString()] = reader.ReadString();
+		}
 	}
 }

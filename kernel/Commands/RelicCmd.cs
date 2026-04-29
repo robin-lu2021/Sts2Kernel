@@ -7,13 +7,9 @@ namespace MegaCrit.Sts2.Core.Commands;
 
 public static class RelicCmd
 {
-	public static T Obtain<T>(Player player) where T : RelicModel, new()
+	public static T Obtain<T>(Player player) where T : RelicModel
 	{
-		T relic = new T
-		{
-			Owner = player
-		};
-		return (T)Obtain(relic, player);
+		return (T)Obtain(KernelModelDb.Relic<T>().ToMutable(), player);
 	}
 
 	public static RelicModel Obtain(RelicModel relic, Player player, int index = -1)

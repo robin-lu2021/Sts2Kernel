@@ -212,16 +212,6 @@ public class AttackCommand
 		return this;
 	}
 
-	public AttackCommand WithHitFx(string? vfx = null, string? sfx = null, string? tmpSfx = null)
-	{
-		return this;
-	}
-
-	public AttackCommand WithAttackerFx(string? vfx = null, string? sfx = null, string? tmpSfx = null)
-	{
-		return this;
-	}
-
 	public AttackCommand SpawningHitVfxOnEachCreature()
 	{
 		return this;

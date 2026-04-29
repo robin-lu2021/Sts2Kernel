@@ -83,7 +83,7 @@ public class UsePotionAction : GameAction
 		WasEnqueuedInCombat = isCombatInProgress;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		PotionModel potion = Player.GetPotionAtSlotIndex((int)PotionIndex);
 		if (potion == null)

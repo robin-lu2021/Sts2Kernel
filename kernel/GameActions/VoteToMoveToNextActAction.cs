@@ -19,7 +19,7 @@ public class VoteToMoveToNextActAction : GameAction
 		_player = player;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		RunManager.Instance.ActChangeSynchronizer.OnPlayerReady(_player);
 		return Task.CompletedTask;

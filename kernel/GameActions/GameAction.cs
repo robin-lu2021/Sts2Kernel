@@ -60,45 +60,20 @@ public abstract class GameAction
 		State = GameActionState.WaitingForExecution;
 	}
 
-	public Task Execute()
+	public void Execute()
 	{
+		Task t = ExecuteAction();
+		t.Wait();
+
 		_pauseForPlayerChoiceTaskSource = new TaskCompletionSource();
-		switch (State)
-		{
-		case GameActionState.WaitingForExecution:
-			_logger.VeryDebug($"Action {this} began executing");
-			State = GameActionState.Executing;
-			this.BeforeExecuted?.Invoke(this);
-			_executionTask = TaskHelper.RunSafely(ExecuteAction());
-			break;
-		case GameActionState.ReadyToResumeExecuting:
-			_logger.VeryDebug($"Action {this} resumed execution");
-			State = GameActionState.Executing;
-			_executeAfterResumptionTaskSource.SetResult();
-			break;
-		default:
-			throw new InvalidOperationException($"Attempted to execute GameAction {this} from invalid state {State}! Expected WaitingForExecution or ReadyToResumeExecuting");
-		}
-		try
-		{
-			Task.WaitAny(_executionTask, _pauseForPlayerChoiceTaskSource.Task);
-		}
-		finally
-		{
-			if (_executionTask.IsCompleted)
-			{
-				_logger.VeryDebug($"Action {this} finished execution");
-				State = GameActionState.Finished;
-				this.JustBeforeFinished?.Invoke(this);
-				_completionSource.SetResult();
-				this.AfterFinished?.Invoke(this);
-			}
-			else
-			{
-				_logger.VeryDebug($"Action {this} paused execution");
-			}
-		}
-		return Task.CompletedTask;
+
+		_logger.VeryDebug($"Action {this} finished execution");
+		State = GameActionState.Finished;
+		this.JustBeforeFinished?.Invoke(this);
+		_completionSource.SetResult();
+		this.AfterFinished?.Invoke(this);
+
+		return;
 	}
 
 	public void ResumeAfterGatheringPlayerChoice(uint newId)
@@ -134,7 +109,7 @@ public abstract class GameAction
 		_pauseForPlayerChoiceTaskSource.SetResult();
 	}
 
-	protected abstract Task ExecuteAction();
+	public abstract Task ExecuteAction();
 
 	public void Cancel()
 	{

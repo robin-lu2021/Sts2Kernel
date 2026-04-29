@@ -235,7 +235,7 @@ public static class CardCmd
 		{
 			replacement.FloorAddedToDeck = original.Owner.RunState.TotalFloor;
 		}
-		replacement.SetCurrentPile(pile.Type);
+		pile.AddInternal(replacement);
 		original.AfterTransformedFrom();
 		replacement.AfterTransformedTo();
 		original.RemoveFromState();

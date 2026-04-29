@@ -25,7 +25,7 @@ public sealed class Anger : CardModel
 			
 			.Execute(choiceContext);
 		CardModel card = CreateClone();
-		CardCmd.PreviewCardPileAdd(CardPileCmd.AddGeneratedCardToCombat(card, PileType.Discard, addedByPlayer: true), 2.2f);
+		CardPileCmd.AddGeneratedCardToCombat(card, PileType.Discard, addedByPlayer: true);
 	}
 
 	protected override void OnUpgrade()

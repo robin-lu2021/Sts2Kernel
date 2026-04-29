@@ -25,7 +25,7 @@ public class ReadyToBeginEnemyTurnAction : GameAction
 		_actionDuringEnemyTurn = actionDuringEnemyTurn;
 	}
 
-	protected override Task ExecuteAction()
+	public override Task ExecuteAction()
 	{
 		CombatManager.Instance.SetReadyToBeginEnemyTurn(_player, _actionDuringEnemyTurn);
 		return Task.CompletedTask;

@@ -24,7 +24,6 @@ public sealed class AdaptiveStrike : CardModel
 	{
 		ArgumentNullException.ThrowIfNull(cardPlay.Target, "cardPlay.Target");
 		DamageCmd.Attack(base.DynamicVars.Damage.BaseValue).FromCard(this).Targeting(cardPlay.Target)
-			
 			.Execute(choiceContext);
 		CardModel cardModel = CreateClone();
 		cardModel.EnergyCost.SetThisCombat(0);
