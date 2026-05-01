@@ -27,12 +27,17 @@ public static class CreatureCmd
 {
 	public static Creature Add<T>(CombatState combatState, string? slotName = null) where T : MonsterModel
 	{
-		throw new NotSupportedException("Headless kernel creature creation is not wired to the legacy Creature runtime yet.");
+		Creature creature = combatState.CreateCreature(ModelDb.Monster<T>().ToMutable(), CombatSide.Enemy, slotName);
+		Add(creature);
+		return creature;
 	}
 
 	public static Creature Add(MonsterModel monster, CombatState combatState, CombatSide side = CombatSide.Enemy, string? slotName = null)
 	{
-		throw new NotSupportedException("Headless kernel creature creation is not wired to the legacy Creature runtime yet.");
+		monster.AssertMutable();
+		Creature creature = combatState.CreateCreature(monster, side, slotName);
+		Add(creature);
+		return creature;
 	}
 
 	public static void Add(Creature creature)

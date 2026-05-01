@@ -30,6 +30,7 @@ public static class CardCmd
 			return;
 		}
 		CombatState combatState = card.CombatState ?? card.Owner.Creature.CombatState;
+		target = NormalizeCardTarget(card, target);
 		if (card.Keywords.Contains(CardKeyword.Unplayable))
 		{
 			MoveToResultPileWithoutPlaying(choiceContext, card);
@@ -90,6 +91,11 @@ public static class CardCmd
 			StarValue = Math.Max(0, card.GetStarCostWithModifiers())
 		};
 		card.OnPlayWrapper(choiceContext, target, isAutoPlay: true, resources, skipCardPileVisuals);
+	}
+
+	private static Creature? NormalizeCardTarget(CardModel card, Creature? target)
+	{
+		return card.TargetType == TargetType.AnyEnemy || card.TargetType == TargetType.AnyAlly ? target : null;
 	}
 
 	private static void MoveToResultPileWithoutPlaying(PlayerChoiceContext choiceContext, CardModel card)
@@ -215,36 +221,7 @@ public static class CardCmd
 
 	public static CardPileAddResult? Transform(CardModel original, CardModel replacement, CardPreviewStyle style = CardPreviewStyle.HorizontalLayout)
 	{
-		if (CombatManager.Instance.IsEnding)
-		{
-			return null;
-		}
-		original.AssertMutable();
-		replacement.AssertMutable();
-		if (!original.IsTransformable)
-		{
-			throw new InvalidOperationException("Can't transform " + original.Id + " because it's un-transformable.");
-		}
-		CardPile pile = original.Pile ?? throw new InvalidOperationException("Can't transform " + original.Id + " because it has no pile.");
-		if (replacement.Owner != original.Owner)
-		{
-			replacement.Owner = original.Owner;
-		}
-		original.RemoveFromCurrentPile();
-		if (pile.Type == PileType.Deck)
-		{
-			replacement.FloorAddedToDeck = original.Owner.RunState.TotalFloor;
-		}
-		pile.AddInternal(replacement);
-		original.AfterTransformedFrom();
-		replacement.AfterTransformedTo();
-		original.RemoveFromState();
-		return new CardPileAddResult
-		{
-			success = true,
-			cardAdded = replacement,
-			modifyingModels = null
-		};
+		return Transform(new CardTransformation(original, replacement).Yield(), null, style).FirstOrDefault();
 	}
 
 	private static int PileIndexSort((CardTransformation, CardPile, int, CardModel) value1, (CardTransformation, CardPile, int, CardModel) value2)
@@ -262,8 +239,15 @@ public static class CardCmd
 		{
 			return Array.Empty<CardPileAddResult>();
 		}
-		List<CardPileAddResult> results = new List<CardPileAddResult>();
-		foreach (CardTransformation transformation in transformations)
+		CardTransformation[] transformationsArr = transformations.ToArray();
+		if (transformationsArr.Length == 0)
+		{
+			return Array.Empty<CardPileAddResult>();
+		}
+
+		CombatState? combatState = transformationsArr[0].Original.CombatState;
+		List<(CardTransformation, CardPile, int, CardModel)> transformationsWithOriginalData = new List<(CardTransformation, CardPile, int, CardModel)>();
+		foreach (CardTransformation transformation in transformationsArr)
 		{
 			CardModel original = transformation.Original;
 			original.AssertMutable();
@@ -271,16 +255,72 @@ public static class CardCmd
 			{
 				throw new InvalidOperationException("Can't transform " + original.Id + " because it's un-transformable.");
 			}
+			CardPile pile = original.Pile ?? throw new InvalidOperationException("Can't transform " + original.Id + " because it has no pile.");
+			int originalIndex = pile.Cards.IndexOf(original);
 			CardModel? replacement = transformation.GetReplacement(rng);
 			if (replacement == null)
 			{
 				throw new InvalidOperationException($"Attempting to transform un-transformable card {original}!");
 			}
-			CardPileAddResult? result = Transform(original, replacement, style);
-			if (result.HasValue)
+			original.RemoveFromCurrentPile();
+			transformationsWithOriginalData.Add((transformation, pile, originalIndex, replacement));
+		}
+		transformationsWithOriginalData.Sort(PileIndexSort);
+
+		List<CardPileAddResult> results = new List<CardPileAddResult>();
+		foreach ((CardTransformation transformation, CardPile pile, int originalIndex, CardModel replacementModel) in transformationsWithOriginalData)
+		{
+			CardModel original = transformation.Original;
+			IRunState runState = original.Owner.RunState;
+			CardModel replacement = replacementModel;
+			replacement.AssertMutable();
+			if (replacement.Owner != original.Owner)
 			{
-				results.Add(result.Value);
+				throw new InvalidOperationException($"Transformation replacement for {original.Id} had different owner from original.");
 			}
+
+			CardPileAddResult result = new CardPileAddResult
+			{
+				success = true,
+				cardAdded = replacement,
+				modifyingModels = null
+			};
+
+			if (pile.Type == PileType.Deck)
+			{
+				replacement = Hook.ModifyCardBeingAddedToDeck(runState, replacement, out List<AbstractModel> modifyingModels);
+				result.cardAdded = replacement;
+				result.modifyingModels = modifyingModels;
+				replacement.FloorAddedToDeck = runState.TotalFloor;
+				runState.CurrentMapPointHistoryEntry?.GetEntry(original.Owner.NetId).CardsTransformed.Add(new CardTransformationHistoryEntry(original, replacement));
+				pile.AddInternal(replacement);
+			}
+			else
+			{
+				pile.AddInternal(replacement, originalIndex);
+				if (combatState != null)
+				{
+					CombatManager.Instance.History.CardGenerated(combatState, replacement, generatedByPlayer: true);
+					Hook.AfterCardEnteredCombat(combatState, replacement);
+				}
+			}
+
+			Hook.AfterCardChangedPiles(runState, combatState, replacement, pile.Type, null);
+			pile.InvokeCardAddFinished();
+			original.AfterTransformedFrom();
+			replacement.AfterTransformedTo();
+			results.Add(result);
+		}
+
+		for (int i = 0; i < results.Count; i++)
+		{
+			CardPileAddResult result = results[i];
+			CombatState? resultCombatState = result.cardAdded.CombatState ?? combatState;
+			if (result.success && result.cardAdded.Pile?.Type.IsCombatPile() == true && resultCombatState != null)
+			{
+				Hook.AfterCardGeneratedForCombat(resultCombatState, result.cardAdded, addedByPlayer: true);
+			}
+			transformationsWithOriginalData[i].Item1.Original.RemoveFromState();
 		}
 		return results;
 	}

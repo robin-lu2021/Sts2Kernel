@@ -178,37 +178,6 @@ public class Creature
 
 	public string? SlotName { get; set; }
 
-	public IEnumerable<IHoverTip> HoverTips
-	{
-		get
-		{
-			if (!CombatManager.Instance.IsInProgress)
-			{
-				return Array.Empty<IHoverTip>();
-			}
-			List<IHoverTip> list = new List<IHoverTip>();
-			if (IsMonster)
-			{
-				foreach (AbstractIntent intent in Monster.NextMove.Intents)
-				{
-					if (intent.HasIntentTip)
-					{
-						list.Add(intent.GetHoverTip(CombatState.Allies, this));
-					}
-				}
-			}
-			foreach (PowerModel power in _powers)
-			{
-				IEnumerable<IHoverTip> hoverTips = power.HoverTips;
-				foreach (IHoverTip item in hoverTips)
-				{
-					list.MegaTryAddingTip(item);
-				}
-			}
-			return list;
-		}
-	}
-
 	public bool IsEnemy => Side == CombatSide.Enemy;
 
 	public bool IsPrimaryEnemy

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 
 namespace MegaCrit.Sts2.Core.Commands.Builders;
@@ -22,7 +23,9 @@ public sealed class AttackContext : IDisposable
 
 	public static AttackContext CreateAsync(CombatState combatState, CardModel cardSource)
 	{
-		return new AttackContext(combatState, cardSource);
+		AttackContext context = new AttackContext(combatState, cardSource);
+		Hook.BeforeAttack(combatState, context._attackCommand);
+		return context;
 	}
 
 	public void AddHit(IEnumerable<DamageResult> results)
@@ -40,6 +43,7 @@ public sealed class AttackContext : IDisposable
 		_disposed = true;
 		try
 		{
+			Hook.AfterAttack(_combatState, _attackCommand);
 		}
 		catch (Exception ex)
 		{

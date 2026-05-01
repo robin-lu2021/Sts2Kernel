@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands.Builders;
 using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.Debug;
 using MegaCrit.Sts2.Core.Entities.CardRewardAlternatives;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -323,6 +324,7 @@ public static class Hook
 		ulong? netId = LocalContext.NetId;
 		if (!netId.HasValue)
 		{
+			PhrogDebug.LogInfo($"Hook.AfterDeath skipped because LocalContext.NetId is null: creature={creature.ModelId.Entry}, combatId={creature.CombatId?.ToString() ?? "null"}, powers={string.Join(",", creature.Powers.Select(p => p.Id.Entry + ":" + p.Amount))}");
 			return;
 		}
 		foreach (AbstractModel model in runState.IterateHookListeners(combatState))

@@ -35,6 +35,7 @@ public sealed class PlayCardAction : GameAction
 
 	public PlayCardAction(CardModel cardModel, Creature? target)
 	{
+		target = NormalizeCardTarget(cardModel, target);
 		if (target != null && !target.CombatId.HasValue)
 		{
 			throw new InvalidOperationException($"Cannot target card against target {target} with no combat ID!");
@@ -56,7 +57,7 @@ public sealed class PlayCardAction : GameAction
 	public override Task ExecuteAction()
 	{
 		_card = NetCombatCard.ToCardModel();
-		Creature target = Player.Creature.CombatState.GetCreature(TargetId);
+		Creature? target = NormalizeCardTarget(_card, Player.Creature.CombatState.GetCreature(TargetId));
 		CardPile? pile = _card.Pile;
 		if (pile == null || pile.Type != PileType.Hand)
 		{
@@ -95,6 +96,11 @@ public sealed class PlayCardAction : GameAction
 		PlayerChoiceContext = new GameActionPlayerChoiceContext(this);
 		_card.OnPlayWrapper(PlayerChoiceContext, target, isAutoPlay: false, resources);
 		return Task.CompletedTask;
+	}
+
+	private static Creature? NormalizeCardTarget(CardModel cardModel, Creature? target)
+	{
+		return cardModel.TargetType == TargetType.AnyEnemy || cardModel.TargetType == TargetType.AnyAlly ? target : null;
 	}
 
 	protected override void CancelAction()

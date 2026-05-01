@@ -15,6 +15,7 @@ using MegaCrit.Sts2.Core.Entities.Potions;
 using MegaCrit.Sts2.Core.Entities.RestSite;
 using MegaCrit.Sts2.Core.GameActions;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.RelicPools;
@@ -539,6 +540,10 @@ public class myGame
 		runState.AppendToMapPointHistory(point.PointType, room.RoomType, room.ModelId);
 		runState.ClearRoomStack();
 		runState.PushRoom(room);
+		if (room is not MapRoom)
+		{
+			Hook.BeforeRoomEntered(runState, room);
+		}
 		CombatSession = null;
 		EventBridge = null;
 		PendingRewards = null;
@@ -565,6 +570,7 @@ public class myGame
 			WriteLine(BuildRoomSummary(room), channel);
 			break;
 		}
+		MarkEnteredTopLevelRoomVisitedIfNeeded(runState, room);
 		return room;
 	}
 
@@ -591,7 +597,7 @@ public class myGame
 			EventBridge = null;
 		}
 		room.Exit(runState);
-		runState.Act.MarkRoomVisited(room.RoomType);
+		MarkEnteredTopLevelRoomVisitedIfNeeded(runState, room);
 		CurrentRoomState = RoomState.Completed;
 		runState.ClearRoomStack();
 		CombatSession = null;
@@ -1172,7 +1178,7 @@ public class myGame
 			WriteLine($"Card '{FormatCardName(card)}' cannot be played right now: {reason}.", channel);
 			return;
 		}
-		Creature? target = PromptCombatTarget(card.TargetType, (Creature creature) => card.IsValidTarget(creature), $"Card '{FormatCardName(card)}'", channel);
+		Creature? target = PromptCardCombatTarget(card, channel);
 		if (_interactiveExitRequested)
 		{
 			return;
@@ -1238,6 +1244,15 @@ public class myGame
 		}).ToList();
 		myCliChoice? choice = PromptChoice($"{sourceLabel} target: ", choices, channel);
 		return choice?.Payload as Creature;
+	}
+
+	private Creature? PromptCardCombatTarget(CardModel card, InteractionChannel channel)
+	{
+		if (!CardUsesExplicitCreatureTarget(card.TargetType))
+		{
+			return null;
+		}
+		return PromptCombatTarget(card.TargetType, (Creature creature) => card.IsValidTarget(creature), $"Card '{FormatCardName(card)}'", channel);
 	}
 
 	private void PromptRewardMenu(InteractionChannel channel)
@@ -1963,7 +1978,7 @@ public class myGame
 			AbstractRoom baseRoom = runState.CurrentRoom ?? throw new InvalidOperationException("Expected the parent event room to remain on the room stack.");
 			baseRoom.Exit(runState);
 			session.ParentEventBridge.EnsureCleanup();
-			runState.Act.MarkRoomVisited(RoomType.Event);
+			MarkEnteredTopLevelRoomVisitedIfNeeded(runState, baseRoom);
 			runState.ClearRoomStack();
 			EventBridge = null;
 			CombatSession = null;
@@ -1986,12 +2001,12 @@ public class myGame
 		if (session.Result == myCombatResult.Defeat)
 		{
 			combatRoom.Exit(runState);
+			MarkEnteredTopLevelRoomVisitedIfNeeded(runState, combatRoom);
 			AbstractRoom poppedRoom = runState.PopCurrentRoom();
 			if (!ReferenceEquals(poppedRoom, combatRoom))
 			{
 				throw new InvalidOperationException("Combat room stack became inconsistent while resolving combat.");
 			}
-			runState.Act.MarkRoomVisited(combatRoom.RoomType);
 			runState.ClearRoomStack();
 			CombatSession = null;
 			session.MarkCompleted();
@@ -2208,6 +2223,10 @@ public class myGame
 		runState.AppendToMapPointHistory(point.PointType, room.RoomType, room.ModelId);
 		runState.ClearRoomStack();
 		runState.PushRoom(room);
+		if (room is not MapRoom)
+		{
+			Hook.BeforeRoomEntered(runState, room);
+		}
 		CombatSession = null;
 		EventBridge = null;
 		PendingRewards = null;
@@ -2234,6 +2253,7 @@ public class myGame
 			WriteLine(BuildRoomSummary(room), channel);
 			break;
 		}
+		MarkEnteredTopLevelRoomVisitedIfNeeded(runState, room);
 	}
 
 	private void RestoreLoadedPreFinishedRoom(SerializableRoom serializableRoom, InteractionChannel channel)
@@ -2261,6 +2281,52 @@ public class myGame
 			return;
 		}
 		WriteLine(BuildRoomSummary(room), channel);
+	}
+
+	private static void MarkEnteredTopLevelRoomVisitedIfNeeded(RunState runState, AbstractRoom room)
+	{
+		if (!HasRoomVisitCounter(room.RoomType))
+		{
+			return;
+		}
+		if (runState.CurrentRoomCount != 1 || !ReferenceEquals(runState.CurrentRoom, room))
+		{
+			return;
+		}
+		int expectedVisitedCount = CountTopLevelRoomsInHistory(runState, room.RoomType);
+		int actualVisitedCount = GetRoomSetVisitedCount(runState, room.RoomType);
+		while (actualVisitedCount < expectedVisitedCount)
+		{
+			runState.Act.MarkRoomVisited(room.RoomType);
+			actualVisitedCount++;
+		}
+	}
+
+	private static bool HasRoomVisitCounter(RoomType roomType)
+	{
+		return roomType is RoomType.Monster or RoomType.Elite or RoomType.Event or RoomType.Boss;
+	}
+
+	private static int CountTopLevelRoomsInHistory(RunState runState, RoomType roomType)
+	{
+		if (runState.CurrentActIndex >= runState.MapPointHistory.Count)
+		{
+			return 0;
+		}
+		return runState.MapPointHistory[runState.CurrentActIndex]
+			.Count((MapPointHistoryEntry entry) => entry.Rooms.FirstOrDefault()?.RoomType == roomType);
+	}
+
+	private static int GetRoomSetVisitedCount(RunState runState, RoomType roomType)
+	{
+		return roomType switch
+		{
+			RoomType.Monster => runState.Act.Rooms.normalEncountersVisited,
+			RoomType.Elite => runState.Act.Rooms.eliteEncountersVisited,
+			RoomType.Event => runState.Act.Rooms.eventsVisited,
+			RoomType.Boss => runState.Act.Rooms.bossEncountersVisited,
+			_ => 0
+		};
 	}
 
 	private void UpdateCurrentMapPointHistoryPlayerStats()
@@ -2374,7 +2440,7 @@ public class myGame
 		{
 			throw new InvalidOperationException($"Card '{card.Title}' cannot be played right now: {reason}.");
 		}
-		Creature? target = ResolveCombatTarget(card.TargetType, (Creature creature) => card.IsValidTarget(creature), targetIndex, $"Card '{card.Title}'");
+		Creature? target = ResolveCardCombatTarget(card, targetIndex);
 		if (!card.IsValidTarget(target))
 		{
 			throw new InvalidOperationException($"Target is not valid for card '{card.Title}'.");
@@ -2461,6 +2527,24 @@ public class myGame
 			throw new InvalidOperationException($"Target {oneBasedTargetIndex.Value} is not valid for {sourceLabel}.");
 		}
 		return selectedTarget;
+	}
+
+	private Creature? ResolveCardCombatTarget(CardModel card, int? oneBasedTargetIndex)
+	{
+		if (!CardUsesExplicitCreatureTarget(card.TargetType))
+		{
+			if (oneBasedTargetIndex.HasValue)
+			{
+				throw new InvalidOperationException($"Card '{FormatCardName(card)}' does not accept an explicit target.");
+			}
+			return null;
+		}
+		return ResolveCombatTarget(card.TargetType, (Creature creature) => card.IsValidTarget(creature), oneBasedTargetIndex, $"Card '{FormatCardName(card)}'");
+	}
+
+	private static bool CardUsesExplicitCreatureTarget(TargetType targetType)
+	{
+		return targetType == TargetType.AnyEnemy || targetType == TargetType.AnyAlly;
 	}
 
 	private IReadOnlyList<Creature> GetOrderedCombatTargets()

@@ -17,8 +17,6 @@ public sealed class Spite : CardModel
 {
 	protected override bool ShouldGlowGoldInternal => LostHpThisTurn(base.Owner.Creature);
 
-	private bool TookDamageThisTurn => CombatManager.Instance.History.Entries.OfType<DamageReceivedEntry>().Any((DamageReceivedEntry e) => e.HappenedThisTurn(base.CombatState) && e.Receiver == base.Owner.Creature && e.Result.UnblockedDamage > 0 && e.CurrentSide == CombatSide.Player);
-
 	protected override IEnumerable<DynamicVar> CanonicalVars => new global::_003C_003Ez__ReadOnlyArray<DynamicVar>(new DynamicVar[2]
 	{
 		new DamageVar(5m, ValueProp.Move),
@@ -37,10 +35,6 @@ public sealed class Spite : CardModel
 		DamageCmd.Attack(base.DynamicVars.Damage.BaseValue).WithHitCount(hitCount).FromCard(this)
 			.Targeting(cardPlay.Target)
 			.Execute(choiceContext);
-		if (TookDamageThisTurn)
-		{
-			CardPileCmd.Draw(choiceContext, base.DynamicVars.Cards.IntValue, base.Owner);
-		}
 	}
 
 	protected override void OnUpgrade()

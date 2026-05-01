@@ -14,10 +14,18 @@ public sealed class Dominate : CardModel
 {
 	private const string _strengthPerVulnerableKey = "StrengthPerVulnerable";
 
+	public override IEnumerable<CardKeyword> CanonicalKeywords => new global::_003C_003Ez__ReadOnlySingleElementList<CardKeyword>(CardKeyword.Exhaust);
+
 	protected override IEnumerable<DynamicVar> CanonicalVars => new global::_003C_003Ez__ReadOnlyArray<DynamicVar>(new DynamicVar[2]
 	{
 		new PowerVar<VulnerablePower>(1m),
 		new DynamicVar("StrengthPerVulnerable", 1m)
+	});
+
+	protected override IEnumerable<IHoverTip> ExtraHoverTips => new global::_003C_003Ez__ReadOnlyArray<IHoverTip>(new IHoverTip[2]
+	{
+		HoverTipFactory.FromPower<StrengthPower>(),
+		HoverTipFactory.FromPower<VulnerablePower>()
 	});
 
 	public Dominate()

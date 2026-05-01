@@ -7,22 +7,44 @@ using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.GameActions;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
-using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Hooks;
+using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Localization.DynamicVars;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.CardPools;
 using MegaCrit.Sts2.Core.Multiplayer.Serialization;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Saves.Runs;
 
 namespace MegaCrit.Sts2.Core;
 
 public abstract class CardModel : AbstractModel
 {
+	private const string SavedKeywordsKey = "__card_keywords";
+
 	private Player? _owner;
+
+	private CardEnergyCost? _energyCost;
+
+	private int _baseReplayCount;
+
+	private bool _starCostSet;
+
+	private int _baseStarCost;
+
+	private bool _wasStarCostJustUpgraded;
+
+	private List<TemporaryCardCost> _temporaryStarCosts = new List<TemporaryCardCost>();
+
+	private int _lastStarsSpent;
+
+	private HashSet<CardKeyword>? _keywords;
+
+	private HashSet<CardTag>? _tags;
 
 	private DynamicVarSet? _dynamicVars;
 
@@ -36,11 +58,15 @@ public abstract class CardModel : AbstractModel
 
 	private bool _isDupe;
 
-	private CardEnergyCost? _energyCost;
+	private int _currentUpgradeLevel;
 
-	private int _baseReplayCount;
+	private CardUpgradePreviewType _upgradePreviewType;
 
-	private bool _singleTurnSly;
+	private bool _isEnchantmentPreview;
+
+	private int? _floorAddedToDeck;
+
+	private Creature? _currentTarget;
 
 	private EnchantmentModel? _enchantment;
 
@@ -135,16 +161,13 @@ public abstract class CardModel : AbstractModel
 	{
 		get
 		{
+			AssertMutable();
 			return _owner ?? throw new InvalidOperationException($"Card '{ContentId}' does not have an owner yet.");
 		}
 		set
 		{
 			AssertMutable();
-			if (value == null)
-			{
-				throw new ArgumentNullException(nameof(value));
-			}
-			if (_owner != null)
+			if (_owner != null && value != null)
 			{
 				throw new InvalidOperationException("Card " + Id.Entry + " already has an owner.");
 			}
@@ -154,9 +177,29 @@ public abstract class CardModel : AbstractModel
 
 	public bool HasOwner => _owner != null;
 
-	public int FloorAddedToDeck { get; set; }
+	public int FloorAddedToDeck
+	{
+		get => _floorAddedToDeck ?? 0;
+		set
+		{
+			AssertMutable();
+			_floorAddedToDeck = value;
+		}
+	}
 
-	public int CurrentUpgradeLevel { get; private set; }
+	public int CurrentUpgradeLevel
+	{
+		get => _currentUpgradeLevel;
+		private set
+		{
+			AssertMutable();
+			if (value > MaxUpgradeLevel)
+			{
+				throw new InvalidOperationException($"{base.Id} cannot be upgraded past its MaxUpgradeLevel.");
+			}
+			_currentUpgradeLevel = value;
+		}
+	}
 
 	public virtual int MaxUpgradeLevel => 1;
 
@@ -170,17 +213,67 @@ public abstract class CardModel : AbstractModel
 
 	public bool IsFreeToPlay { get; private set; }
 
-	public bool ExhaustOnPlay { get; set; }
+	public bool ExhaustOnPlay
+	{
+		get => Keywords.Contains(CardKeyword.Exhaust);
+		set
+		{
+			if (value)
+			{
+				AddKeyword(CardKeyword.Exhaust);
+			}
+			else
+			{
+				RemoveKeyword(CardKeyword.Exhaust);
+			}
+		}
+	}
 
-	public bool Retain { get; set; }
+	public bool Retain
+	{
+		get => Keywords.Contains(CardKeyword.Retain);
+		set
+		{
+			if (value)
+			{
+				AddKeyword(CardKeyword.Retain);
+			}
+			else
+			{
+				RemoveKeyword(CardKeyword.Retain);
+			}
+		}
+	}
 
-	public bool Ethereal { get; set; }
+	public bool Ethereal
+	{
+		get => Keywords.Contains(CardKeyword.Ethereal);
+		set
+		{
+			if (value)
+			{
+				AddKeyword(CardKeyword.Ethereal);
+			}
+			else
+			{
+				RemoveKeyword(CardKeyword.Ethereal);
+			}
+		}
+	}
 
 	public bool HasBeenRemovedFromState { get; internal set; }
 
 	public PileType CurrentPileType { get; private set; } = PileType.None;
 
-	public Creature? CurrentTarget { get; private set; }
+	public Creature? CurrentTarget
+	{
+		get => _currentTarget;
+		private set
+		{
+			AssertMutable();
+			_currentTarget = value;
+		}
+	}
 
 	public CardEnergyCost EnergyCost => _energyCost ??= new CardEnergyCost(this, CanonicalEnergyCost, HasEnergyCostX);
 
@@ -189,6 +282,7 @@ public abstract class CardModel : AbstractModel
 		get => _baseReplayCount;
 		set
 		{
+			AssertMutable();
 			_baseReplayCount = value;
 			ReplayCountChanged?.Invoke();
 		}
@@ -197,68 +291,214 @@ public abstract class CardModel : AbstractModel
 	public bool ExhaustOnNextPlay
 	{
 		get => _exhaustOnNextPlay;
-		set => _exhaustOnNextPlay = value;
+		set
+		{
+			AssertMutable();
+			_exhaustOnNextPlay = value;
+		}
 	}
 
-	public bool ShouldRetainThisTurn => Retain || _hasSingleTurnRetain || CanonicalKeywords.Contains(CardKeyword.Retain);
+	public bool ShouldRetainThisTurn => Keywords.Contains(CardKeyword.Retain) || _hasSingleTurnRetain;
 
-	public bool IsInCombat => Pile?.IsCombatPile ?? false;
+	public bool IsInCombat => IsMutable && (Pile?.IsCombatPile ?? false);
 
-	public bool IsDupe { get; protected set; }
+	public bool IsDupe
+	{
+		get => _isDupe;
+		private set
+		{
+			AssertMutable();
+			_isDupe = value;
+		}
+	}
 
 	public CardModel? DeckVersion
 	{
-		get => _deckVersion ?? (CurrentPileType == PileType.Deck ? this : null);
-		set => _deckVersion = value;
+		get => _deckVersion;
+		set
+		{
+			AssertMutable();
+			_deckVersion = value;
+		}
 	}
 
 	public CardModel CanonicalInstance => !IsMutable ? this : _canonicalInstance ?? this;
 
 	public bool IsClone => CloneOf != null;
 
-	public bool IsTransformable => true;
+	public CardModel? DupeOf => IsDupe ? CloneOf : null;
 
-	public virtual bool IsRemovable => true;
+	public bool IsTransformable
+	{
+		get
+		{
+			if (!IsRemovable)
+			{
+				CardPile? pile = Pile;
+				return pile == null || pile.Type != PileType.Deck;
+			}
+			return true;
+		}
+	}
 
-	public bool IsSlyThisTurn => _singleTurnSly;
+	public virtual bool IsRemovable => !Keywords.Contains(CardKeyword.Eternal);
+
+	public bool IsSlyThisTurn => Keywords.Contains(CardKeyword.Sly) || _hasSingleTurnSly;
 
 	public EnchantmentModel? Enchantment => _enchantment;
 
 	public AfflictionModel? Affliction => _affliction;
 
-	public bool IsEnchantmentPreview => Enchantment != null;
+	public bool IsEnchantmentPreview
+	{
+		get => _isEnchantmentPreview;
+		set
+		{
+			AssertMutable();
+			_isEnchantmentPreview = value;
+		}
+	}
 
-	public IEnumerable<IHoverTip> HoverTips => Array.Empty<IHoverTip>();
+	protected virtual IEnumerable<IHoverTip> ExtraHoverTips => Array.Empty<IHoverTip>();
 
-	public CardUpgradePreviewType UpgradePreviewType { get; set; }
+	public IEnumerable<IHoverTip> HoverTips
+	{
+		get
+		{
+			List<IHoverTip> hoverTips = ExtraHoverTips.ToList();
+			if (Enchantment != null)
+			{
+				hoverTips.AddRange(Enchantment.HoverTips);
+			}
+			if (Affliction != null)
+			{
+				hoverTips.AddRange(Affliction.HoverTips);
+			}
+			int enchantedReplayCount = GetEnchantedReplayCount();
+			if (enchantedReplayCount > 0)
+			{
+				hoverTips.Add(HoverTipFactory.Static(StaticHoverTip.ReplayDynamic, new DynamicVar("Times", enchantedReplayCount)));
+			}
+			if (OrbEvokeType != OrbEvokeType.None)
+			{
+				hoverTips.Add(HoverTipFactory.Static(StaticHoverTip.Evoke));
+			}
+			if (GainsBlock)
+			{
+				hoverTips.Add(HoverTipFactory.Static(StaticHoverTip.Block));
+			}
+			foreach (CardKeyword keyword in Keywords)
+			{
+				hoverTips.Add(HoverTipFactory.FromKeyword(keyword));
+				if (keyword == CardKeyword.Ethereal)
+				{
+					hoverTips.Add(HoverTipFactory.FromKeyword(CardKeyword.Exhaust));
+				}
+			}
+			return hoverTips.Distinct();
+		}
+	}
 
-	public int CurrentStarCost => StarCostForTurn;
+	public CardUpgradePreviewType UpgradePreviewType
+	{
+		get => _upgradePreviewType;
+		set
+		{
+			AssertMutable();
+			if (!value.IsPreview() && _upgradePreviewType.IsPreview())
+			{
+				throw new InvalidOperationException("A card cannot go to from being upgrade preview. Consider making a new card model instead.");
+			}
+			_upgradePreviewType = value;
+		}
+	}
 
-	public virtual int BaseStarCost => CanonicalStarCost;
+	public bool WasStarCostJustUpgraded => _wasStarCostJustUpgraded;
 
-	public virtual TemporaryCardCost? TemporaryStarCost => HasStarCostX || StarCostForTurn < 0 || StarCostForTurn == BaseStarCost
-		? null
-		: TemporaryCardCost.ThisCombat(StarCostForTurn);
+	public TemporaryCardCost? TemporaryStarCost => _temporaryStarCosts.LastOrDefault();
+
+	public virtual int CurrentStarCost
+	{
+		get
+		{
+			int? temporaryCost = _temporaryStarCosts.LastOrDefault()?.Cost;
+			if (temporaryCost.HasValue)
+			{
+				if (temporaryCost == 0 && BaseStarCost < 0)
+				{
+					return BaseStarCost;
+				}
+				return temporaryCost.Value;
+			}
+			return BaseStarCost;
+		}
+	}
+
+	public int BaseStarCost
+	{
+		get
+		{
+			if (!IsMutable)
+			{
+				return CanonicalStarCost;
+			}
+			if (!_starCostSet)
+			{
+				_baseStarCost = CanonicalStarCost;
+				_starCostSet = true;
+			}
+			return _baseStarCost;
+		}
+		private set
+		{
+			AssertMutable();
+			if (!HasStarCostX)
+			{
+				_baseStarCost = value;
+				_starCostSet = true;
+			}
+			StarCostChanged?.Invoke();
+		}
+	}
 
 	public virtual string[] AllPortraitPaths => Array.Empty<string>();
 
-	public int LastStarsSpent { get; set; }
+	public int LastStarsSpent
+	{
+		get => _lastStarsSpent;
+		set
+		{
+			AssertMutable();
+			_lastStarsSpent = value;
+		}
+	}
 
-	public CombatState? CombatState => HasOwner ? Owner.Creature.CombatState : null;
+	public CombatState? CombatState
+	{
+		get
+		{
+			CardPile? pile = Pile;
+			if ((pile != null && pile.IsCombatPile) || UpgradePreviewType == CardUpgradePreviewType.Combat)
+			{
+				return _owner?.Creature.CombatState;
+			}
+			return null;
+		}
+	}
 
 	public RunState RunState => Owner.RunState as RunState ?? throw new InvalidOperationException("Card owner is not attached to a mutable RunState.");
 
-	public ICardScope CardScope => CombatState != null ? CombatState : Owner.RunState;
+	public ICardScope CardScope => CombatState ?? (ICardScope?)_owner?.Creature.CombatState ?? Owner.RunState;
 
 	public CardPile? Pile
 	{
 		get
 		{
-			if (!HasOwner || CurrentPileType == PileType.None)
+			if (!HasOwner)
 			{
 				return null;
 			}
-			return CurrentPileType.GetPile(Owner);
+			return _owner?.Piles.FirstOrDefault((CardPile p) => p.Cards.Contains(this));
 		}
 	}
 
@@ -270,28 +510,21 @@ public abstract class CardModel : AbstractModel
 	
 	protected virtual HashSet<CardTag> CanonicalTags => new HashSet<CardTag>();
 
-	public virtual IEnumerable<CardTag> Tags => CanonicalTags;
+	public virtual IEnumerable<CardTag> Tags => _tags ??= CanonicalTags;
 
 	public virtual IEnumerable<CardKeyword> CanonicalKeywords => Array.Empty<CardKeyword>();
 
-	public virtual IReadOnlyCollection<CardKeyword> Keywords
+	public IReadOnlySet<CardKeyword> Keywords
 	{
 		get
 		{
-			HashSet<CardKeyword> keywords = new HashSet<CardKeyword>(CanonicalKeywords);
-			if (ExhaustOnPlay)
+			if (_keywords != null)
 			{
-				keywords.Add(CardKeyword.Exhaust);
+				return _keywords;
 			}
-			if (Retain)
-			{
-				keywords.Add(CardKeyword.Retain);
-			}
-			if (Ethereal)
-			{
-				keywords.Add(CardKeyword.Ethereal);
-			}
-			return keywords;
+			_keywords = new HashSet<CardKeyword>();
+			_keywords.UnionWith(CanonicalKeywords);
+			return _keywords;
 		}
 	}
 		
@@ -308,6 +541,8 @@ public abstract class CardModel : AbstractModel
 	public event Action? EnchantmentChanged;
 
 	public event Action? EnergyCostChanged;
+
+	public event Action? KeywordsChanged;
 
 	public event Action? ReplayCountChanged;
 
@@ -393,42 +628,48 @@ public abstract class CardModel : AbstractModel
 		{
 			return 0;
 		}
-		if (StarCostForTurn < 0)
+		if (CurrentStarCost < 0)
 		{
 			return -1;
 		}
-		return Math.Max(0, StarCostForTurn);
+		return Math.Max(0, GetStarCostWithModifiers());
 	}
 
 	public bool RequiresTarget => TargetType.IsSingleTarget();
 
-	public virtual bool CanPlay(Creature? target = null)
+	public virtual bool CanPlay(Creature? target)
 	{
-		if (HasBeenRemovedFromState)
+		return CanPlayTargeting(target);
+	}
+
+	public bool CanPlayTargeting(Creature? target)
+	{
+		if (!IsValidTarget(target))
 		{
 			return false;
 		}
-		if (!HasOwner)
+		return CanPlay();
+	}
+
+	public bool CanPlay()
+	{
+		return CanPlay(out _, out _);
+	}
+
+	public bool TryManualPlay(Creature? target)
+	{
+		if (CanPlayTargeting(target))
 		{
-			return false;
-		}
-		if (!CanAffordCosts())
-		{
-			return false;
-		}
-		if (!IsPlayable)
-		{
-			return false;
-		}
-		try
-		{
-			ValidateTarget(target);
+			EnqueueManualPlay(target);
 			return true;
 		}
-		catch
-		{
-			return false;
-		}
+		return false;
+	}
+
+	private void EnqueueManualPlay(Creature? target)
+	{
+		OnEnqueuePlayVfx(target);
+		RunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(new PlayCardAction(this, target));
 	}
 
 	public bool CanAffordCosts()
@@ -437,11 +678,7 @@ public abstract class CardModel : AbstractModel
 		{
 			return false;
 		}
-		if (!HasEnergyCostX && Owner.MaxEnergy < GetEnergyCostToPay())
-		{
-			return false;
-		}
-		return true;
+		return Owner.PlayerCombatState != null && Owner.PlayerCombatState.HasEnoughResourcesFor(this, out _);
 	}
 
 	public void ValidateTarget(Creature? target)
@@ -488,15 +725,27 @@ public abstract class CardModel : AbstractModel
 
 	public virtual bool IsValidTarget(Creature? target)
 	{
-		try
+		if (target == null)
 		{
-			ValidateTarget(target);
-			return true;
+			if (TargetType != TargetType.AnyEnemy)
+			{
+				return TargetType != TargetType.AnyAlly;
+			}
+			return false;
 		}
-		catch
+		if (!target.IsAlive)
 		{
 			return false;
 		}
+		if (TargetType == TargetType.AnyEnemy)
+		{
+			return target.Side != Owner.Creature.Side;
+		}
+		if (TargetType == TargetType.AnyAlly)
+		{
+			return target.Side == Owner.Creature.Side;
+		}
+		return false;
 	}
 
 	public void ResetCostsForTurn()
@@ -506,12 +755,13 @@ public abstract class CardModel : AbstractModel
 		StarCostForTurn = CanonicalStarCost;
 		_exhaustOnNextPlay = false;
 		_hasSingleTurnRetain = false;
-		_singleTurnSly = false;
+		_hasSingleTurnSly = false;
 	}
 
 	public void SetEnergyCostForTurn(int cost)
 	{
 		EnergyCostForTurn = Math.Max(0, cost);
+		EnergyCost.SetThisTurnOrUntilPlayed(EnergyCostForTurn);
 		InvokeEnergyCostChanged();
 	}
 
@@ -529,27 +779,82 @@ public abstract class CardModel : AbstractModel
 	public void SetStarCostForTurn(int cost)
 	{
 		StarCostForTurn = cost;
-		StarCostChanged?.Invoke();
+		SetStarCostThisTurn(cost);
 	}
 
 	public void SetFreeToPlayThisTurn()
 	{
-		IsFreeToPlay = true;
+		SetToFreeThisTurn();
+	}
+
+	public void SetToFreeThisTurn()
+	{
+		EnergyCost.SetThisTurnOrUntilPlayed(0);
+		SetStarCostThisTurn(0);
 	}
 
 	public void SetToFreeThisCombat()
 	{
-		SetFreeToPlayThisTurn();
+		EnergyCost.SetThisCombat(0);
+		SetStarCostThisCombat(0);
+	}
+
+	public void SetStarCostUntilPlayed(int cost)
+	{
+		AddTemporaryStarCost(TemporaryCardCost.UntilPlayed(cost));
+	}
+
+	public void SetStarCostThisTurn(int cost)
+	{
+		AddTemporaryStarCost(TemporaryCardCost.ThisTurn(cost));
+	}
+
+	public void SetStarCostThisCombat(int cost)
+	{
+		AddTemporaryStarCost(TemporaryCardCost.ThisCombat(cost));
+	}
+
+	public int GetStarCostThisCombat()
+	{
+		return _temporaryStarCosts.FirstOrDefault((TemporaryCardCost cost) => cost != null && !cost.ClearsWhenTurnEnds && !cost.ClearsWhenCardIsPlayed)?.Cost ?? BaseStarCost;
+	}
+
+	private void AddTemporaryStarCost(TemporaryCardCost cost)
+	{
+		AssertMutable();
+		_temporaryStarCosts.Add(cost);
+		StarCostChanged?.Invoke();
+	}
+
+	protected void UpgradeStarCostBy(int addend)
+	{
+		if (HasStarCostX)
+		{
+			throw new InvalidOperationException("UpgradeStarCostBy called on " + base.Id.Entry + " which has star cost X.");
+		}
+		if (addend == 0)
+		{
+			return;
+		}
+		int baseStarCost = BaseStarCost;
+		BaseStarCost += addend;
+		_wasStarCostJustUpgraded = true;
+		if (BaseStarCost < baseStarCost)
+		{
+			_temporaryStarCosts.RemoveAll((TemporaryCardCost c) => c.Cost > BaseStarCost);
+		}
 	}
 
 	public void GiveSingleTurnRetain()
 	{
+		AssertMutable();
 		_hasSingleTurnRetain = true;
 	}
 
 	public void GiveSingleTurnSly()
 	{
-		_singleTurnSly = true;
+		AssertMutable();
+		_hasSingleTurnSly = true;
 	}
 
 	public void SetCurrentPile(PileType pileType)
@@ -559,6 +864,7 @@ public abstract class CardModel : AbstractModel
 
 	public void RemoveFromCurrentPile(bool silent = false)
 	{
+		AssertMutable();
 		CardPile? pile = Pile;
 		CurrentPileType = PileType.None;
 		pile?.RemoveInternal(this, silent);
@@ -572,10 +878,25 @@ public abstract class CardModel : AbstractModel
 
 	public void RemoveFromState()
 	{
-		MarkRemovedFromState();
+		RemoveFromCurrentPile();
+		HasBeenRemovedFromState = true;
+		CurrentPileType = PileType.None;
 	}
 
-	public mySerializableCard ToSerializable()
+	public SerializableCard ToSerializable()
+	{
+		AssertMutable();
+		return new SerializableCard
+		{
+			Id = base.Id,
+			CurrentUpgradeLevel = CurrentUpgradeLevel,
+			Props = SavedProperties.From(this),
+			Enchantment = Enchantment?.ToSerializable(),
+			FloorAddedToDeck = FloorAddedToDeck
+		};
+	}
+
+	public mySerializableCard ToKernelSerializable()
 	{
 		return SaveState();
 	}
@@ -597,6 +918,7 @@ public abstract class CardModel : AbstractModel
 			CurrentPileType = CurrentPileType
 		};
 		WriteCustomState(save.State);
+		save.State[SavedKeywordsKey] = string.Join(",", Keywords.Select((CardKeyword k) => k.ToString()).OrderBy((string k) => k, StringComparer.Ordinal));
 		return save;
 	}
 
@@ -610,46 +932,35 @@ public abstract class CardModel : AbstractModel
 		};
 	}
 
-	public void SetToFreeThisTurn()
+	public (int, int) SpendResources()
 	{
-		SetFreeToPlayThisTurn();
-	}
-
-	public void SpendResources()
-	{
-		PayCosts();
+		int energy = Owner.PlayerCombatState.Energy;
+		int energyToSpend = EnergyCost.GetAmountToSpend();
+		int starsToSpend = Math.Max(0, GetStarCostWithModifiers());
+		if (energyToSpend > energy && CombatState != null && Hook.ShouldPayExcessEnergyCostWithStars(CombatState, Owner))
+		{
+			starsToSpend += (energyToSpend - energy) * 2;
+			energyToSpend = energy;
+		}
+		SpendEnergy(energyToSpend);
+		SpendStars(starsToSpend);
+		return (energyToSpend, starsToSpend);
 	}
 
 	public void AddKeyword(CardKeyword keyword)
 	{
-		switch (keyword)
-		{
-		case CardKeyword.Exhaust:
-			ExhaustOnPlay = true;
-			break;
-		case CardKeyword.Retain:
-			Retain = true;
-			break;
-		case CardKeyword.Ethereal:
-			Ethereal = true;
-			break;
-		}
+		AssertMutable();
+		_keywords ??= new HashSet<CardKeyword>(CanonicalKeywords);
+		_keywords.Add(keyword);
+		KeywordsChanged?.Invoke();
 	}
 
 	public void RemoveKeyword(CardKeyword keyword)
 	{
-		switch (keyword)
-		{
-		case CardKeyword.Exhaust:
-			ExhaustOnPlay = false;
-			break;
-		case CardKeyword.Retain:
-			Retain = false;
-			break;
-		case CardKeyword.Ethereal:
-			Ethereal = false;
-			break;
-		}
+		AssertMutable();
+		_keywords ??= new HashSet<CardKeyword>(CanonicalKeywords);
+		_keywords.Remove(keyword);
+		KeywordsChanged?.Invoke();
 	}
 
 	public void Upgrade()
@@ -658,9 +969,8 @@ public abstract class CardModel : AbstractModel
 		{
 			throw new InvalidOperationException($"Card '{Id}' can no longer be upgraded.");
 		}
-		CurrentUpgradeLevel++;
-		OnUpgrade();
-		Upgraded?.Invoke();
+		UpgradeInternal();
+		FinalizeUpgradeInternal();
 	}
 
 	protected virtual void OnUpgrade()
@@ -717,30 +1027,40 @@ public abstract class CardModel : AbstractModel
 		{
 			return;
 		}
-		PlayerCombatState playerCombatState = Owner.PlayerCombatState;
-		int energyToSpend = EnergyCost.GetAmountToSpend();
-		int starsToSpend;
+		SpendResources();
+	}
+
+	private void SpendEnergy(int amount)
+	{
 		if (EnergyCost.CostsX)
 		{
-			EnergyCost.CapturedXValue = energyToSpend;
+			EnergyCost.CapturedXValue = amount;
 		}
-		if (HasStarCostX)
+		if (amount > 0)
 		{
-			starsToSpend = playerCombatState.Stars;
-			LastStarsSpent = starsToSpend;
+			if (CombatState != null)
+			{
+				CombatManager.Instance.History.EnergySpent(CombatState, amount, Owner);
+			}
+			Owner.PlayerCombatState.LoseEnergy(Math.Max(0, amount));
 		}
-		else
+		if (CombatState != null)
 		{
-			starsToSpend = Math.Max(0, GetStarCostWithModifiers());
-			LastStarsSpent = starsToSpend;
+			Hook.AfterEnergySpent(CombatState, this, amount);
 		}
-		if (energyToSpend > playerCombatState.Energy && CombatState != null && Hooks.Hook.ShouldPayExcessEnergyCostWithStars(CombatState, Owner))
+	}
+
+	private void SpendStars(int amount)
+	{
+		LastStarsSpent = amount;
+		if (amount > 0)
 		{
-			starsToSpend += (energyToSpend - playerCombatState.Energy) * 2;
-			energyToSpend = playerCombatState.Energy;
+			Owner.PlayerCombatState.LoseStars(amount);
+			if (Owner.Creature.CombatState != null)
+			{
+				Hook.AfterStarsSpent(Owner.Creature.CombatState, amount, Owner);
+			}
 		}
-		PlayerCmd.LoseEnergy(energyToSpend, Owner);
-		PlayerCmd.LoseStars(starsToSpend, Owner);
 	}
 
 	protected virtual void ResolveAfterPlayDestination()
@@ -772,6 +1092,10 @@ public abstract class CardModel : AbstractModel
 	public virtual void AfterCreated()
 	{
 		return;
+	}
+
+	protected virtual void AfterDeserialized()
+	{
 	}
 
 	public virtual void BeforePlayed(PlayerChoiceContext? choiceContext, Creature? target)
@@ -813,9 +1137,18 @@ public abstract class CardModel : AbstractModel
 		return HasStarCostX ? LastStarsSpent : Math.Max(0, GetStarCostWithModifiers());
 	}
 
-	public virtual int GetStarCostWithModifiers()
+	public int GetStarCostWithModifiers()
 	{
-		return GetStarCostToPay();
+		if (HasStarCostX)
+		{
+			return Owner.PlayerCombatState?.Stars ?? 0;
+		}
+		CardPile? pile = Pile;
+		if (pile != null && pile.IsCombatPile && CombatState != null)
+		{
+			return (int)Hook.ModifyStarCost(CombatState, this, CurrentStarCost);
+		}
+		return CurrentStarCost;
 	}
 
 	protected virtual void AddExtraArgsToDescription(LocString description)
@@ -824,29 +1157,38 @@ public abstract class CardModel : AbstractModel
 
 	public virtual bool CanPlay(out UnplayableReason reason, out AbstractModel? preventer)
 	{
-		preventer = null;
+		reason = UnplayableReason.None;
+		CombatState? combatState = CombatState ?? _owner?.Creature.CombatState;
+		if (combatState == null || !HasOwner || Owner.PlayerCombatState == null)
+		{
+			preventer = null;
+			return false;
+		}
 		if (HasBeenRemovedFromState)
 		{
-			reason = UnplayableReason.BlockedByHook;
-			return false;
+			reason |= UnplayableReason.BlockedByHook;
 		}
-		if (!HasOwner)
+		if (Keywords.Contains(CardKeyword.Unplayable))
 		{
-			reason = UnplayableReason.BlockedByHook;
-			return false;
+			reason |= UnplayableReason.HasUnplayableKeyword;
 		}
-		if (!CanAffordCosts())
+		if (!Owner.PlayerCombatState.HasEnoughResourcesFor(this, out UnplayableReason resourceReason))
 		{
-			reason = UnplayableReason.EnergyCostTooHigh;
-			return false;
+			reason |= resourceReason;
+		}
+		if (TargetType == TargetType.AnyAlly && combatState.PlayerCreatures.Count((Creature c) => c.IsAlive) <= 1)
+		{
+			reason |= UnplayableReason.NoLivingAllies;
+		}
+		if (!Hook.ShouldPlay(combatState, this, out preventer, AutoPlayType.None))
+		{
+			reason |= UnplayableReason.BlockedByHook;
 		}
 		if (!IsPlayable)
 		{
-			reason = UnplayableReason.BlockedByHook;
-			return false;
+			reason |= UnplayableReason.BlockedByCardLogic;
 		}
-		reason = UnplayableReason.None;
-		return true;
+		return reason == UnplayableReason.None;
 	}
 
 	public void InvokeEnergyCostChanged()
@@ -874,9 +1216,54 @@ public abstract class CardModel : AbstractModel
 		{
 			return this;
 		}
-		CardModel clone = (CardModel)MutableClone();
-		clone._canonicalInstance = this;
-		return clone;
+		return (CardModel)MutableClone();
+	}
+
+	protected override void DeepCloneFields()
+	{
+		HashSet<CardKeyword> keywords = new HashSet<CardKeyword>();
+		foreach (CardKeyword keyword in Keywords)
+		{
+			keywords.Add(keyword);
+		}
+		_keywords = keywords;
+		_dynamicVars = DynamicVars.Clone(this);
+		_energyCost = _energyCost?.Clone(this);
+		_temporaryStarCosts = _temporaryStarCosts.ToList();
+		if (Enchantment != null)
+		{
+			EnchantmentModel enchantment = (EnchantmentModel)Enchantment.ClonePreservingMutability();
+			_enchantment = null;
+			EnchantInternal(enchantment, enchantment.Amount);
+		}
+		if (Affliction != null)
+		{
+			AfflictionModel affliction = (AfflictionModel)Affliction.ClonePreservingMutability();
+			_affliction = null;
+			AfflictInternal(affliction, affliction.Amount);
+		}
+	}
+
+	protected override void AfterCloned()
+	{
+		base.AfterCloned();
+		if (_canonicalInstance == null)
+		{
+			_canonicalInstance = ModelDb.GetById<CardModel>(base.Id);
+		}
+		CurrentTarget = null;
+		DeckVersion = null;
+		HasBeenRemovedFromState = false;
+		AfflictionChanged = null;
+		Drawn = null;
+		EnchantmentChanged = null;
+		EnergyCostChanged = null;
+		Forged = null;
+		KeywordsChanged = null;
+		Played = null;
+		ReplayCountChanged = null;
+		StarCostChanged = null;
+		Upgraded = null;
 	}
 
 	public CardModel CreateClone()
@@ -885,7 +1272,7 @@ public abstract class CardModel : AbstractModel
 		{
 			throw new InvalidOperationException("Cannot create a clone of a card that is not in a combat pile.");
 		}
-		// AssertMutable();
+		AssertMutable();
 		CardModel cardModel = CardScope.CloneCard(this);
 		cardModel._cloneOf = this;
 		return cardModel;
@@ -893,6 +1280,11 @@ public abstract class CardModel : AbstractModel
 
 	public CardModel CreateDupe()
 	{
+		if (IsDupe)
+		{
+			return DupeOf?.CreateDupe() ?? throw new InvalidOperationException("A dupe card is missing its source card.");
+		}
+		AssertMutable();
 		CardModel dupe = CreateClone();
 		dupe.IsDupe = true;
 		dupe.RemoveKeyword(CardKeyword.Exhaust);
@@ -911,12 +1303,18 @@ public abstract class CardModel : AbstractModel
 
 	public virtual void EndOfTurnCleanup()
 	{
+		ExhaustOnNextPlay = false;
+		IsFreeToPlay = false;
+		_hasSingleTurnRetain = false;
+		_hasSingleTurnSly = false;
 		if (EnergyCost.EndOfTurnCleanup())
 		{
 			InvokeEnergyCostChanged();
 		}
-		_hasSingleTurnRetain = false;
-		_singleTurnSly = false;
+		if (_temporaryStarCosts.RemoveAll((TemporaryCardCost c) => c.ClearsWhenTurnEnds) > 0)
+		{
+			StarCostChanged?.Invoke();
+		}
 	}
 
 	public virtual void AfterDrawn(PlayerChoiceContext? choiceContext, bool fromHandDraw)
@@ -953,52 +1351,97 @@ public abstract class CardModel : AbstractModel
 		CurrentTarget = target;
 		try
 		{
-			CardPlay cardPlay = new CardPlay
-			{
-				Card = this,
-				Target = target,
-				ResultPile = GetResultPileType(),
-				Resources = resources,
-				IsAutoPlay = isAutoPlay,
-				PlayIndex = 0,
-				PlayCount = 1
-			};
-			var cs = this.CombatState;
+			CombatState? cs = CombatState;
+			PileType resultPileType = GetResultPileType();
+			CardPilePosition resultPilePosition = CardPilePosition.Bottom;
 			if (cs != null)
 			{
-				Hook.BeforeCardPlayed(cs, cardPlay);
+				(resultPileType, resultPilePosition) = Hook.ModifyCardPlayResultPileTypeAndPosition(cs, this, isAutoPlay, resources, resultPileType, resultPilePosition, out IEnumerable<AbstractModel> resultModifiers);
+				foreach (AbstractModel modifier in resultModifiers)
+				{
+					modifier.AfterModifyingCardPlayResultPileOrPosition(this, resultPileType, resultPilePosition);
+				}
 			}
-			OnPlay(choiceContext, cardPlay);
-			if (Owner.Creature.IsDead)
+			int playCount = GetEnchantedReplayCount() + 1;
+			if (cs != null)
 			{
-				return Task.CompletedTask;
+				playCount = Hook.ModifyCardPlayCount(cs, this, playCount, target, out List<AbstractModel> modifyingModels);
+				Hook.AfterModifyingCardPlayCount(cs, this, modifyingModels);
 			}
-			InvokeExecutionFinished();
-			if (Enchantment != null)
+			for (int i = 0; i < playCount; i++)
 			{
-				Enchantment.OnPlay(choiceContext, cardPlay);
+				CardPlay cardPlay = new CardPlay
+				{
+					Card = this,
+					Target = target,
+					ResultPile = resultPileType,
+					Resources = resources,
+					IsAutoPlay = isAutoPlay,
+					PlayIndex = i,
+					PlayCount = playCount
+				};
+				if (cs != null)
+				{
+					Hook.BeforeCardPlayed(cs, cardPlay);
+					CombatManager.Instance.History.CardPlayStarted(cs, cardPlay);
+				}
+				OnPlay(choiceContext, cardPlay);
 				if (Owner.Creature.IsDead)
 				{
 					return Task.CompletedTask;
 				}
-				Enchantment.InvokeExecutionFinished();
-			}
-			if (Affliction != null)
-			{
-				Affliction.OnPlay(choiceContext, target);
-				if (Owner.Creature.IsDead)
+				InvokeExecutionFinished();
+				if (Enchantment != null)
 				{
-					return Task.CompletedTask;
+					Enchantment.OnPlay(choiceContext, cardPlay).GetAwaiter().GetResult();
+					if (Owner.Creature.IsDead)
+					{
+						return Task.CompletedTask;
+					}
+					Enchantment.InvokeExecutionFinished();
 				}
-				Affliction.InvokeExecutionFinished();
+				if (Affliction != null)
+				{
+					AfflictionModel affliction = Affliction;
+					affliction.OnPlay(choiceContext, target).GetAwaiter().GetResult();
+					if (Owner.Creature.IsDead)
+					{
+						return Task.CompletedTask;
+					}
+					affliction.InvokeExecutionFinished();
+				}
+				if (cs != null && CombatManager.Instance.IsInProgress)
+				{
+					CombatManager.Instance.History.CardPlayFinished(cs, cardPlay);
+					Hook.AfterCardPlayed(cs, choiceContext, cardPlay);
+				}
 			}
-			if (cs != null && CombatManager.Instance.IsInProgress)
+			CardPile? pile = Pile;
+			if (pile != null && pile.Type == PileType.Play)
 			{
-				CombatManager.Instance.History.CardPlayFinished(cs, cardPlay);
-				Hook.AfterCardPlayed(cs, choiceContext, cardPlay);
+				switch (resultPileType)
+				{
+				case PileType.None:
+					CardPileCmd.RemoveFromCombat(this, skipCardPileVisuals);
+					break;
+				case PileType.Exhaust:
+					CardCmd.Exhaust(choiceContext, this, causedByEthereal: false, skipCardPileVisuals);
+					break;
+				default:
+					CardPileCmd.Add(this, resultPileType, resultPilePosition, null, skipCardPileVisuals);
+					break;
+				}
 			}
+			if (EnergyCost.AfterCardPlayedCleanup())
+			{
+				EnergyCostChanged?.Invoke();
+			}
+			if (_temporaryStarCosts.RemoveAll((TemporaryCardCost c) => c.ClearsWhenCardIsPlayed) > 0)
+			{
+				StarCostChanged?.Invoke();
+			}
+			IsFreeToPlay = false;
 			Played?.Invoke();
-			ResolveAfterPlayDestination();
 		}
 		finally
 		{
@@ -1009,33 +1452,59 @@ public abstract class CardModel : AbstractModel
 
 	public virtual Task MoveToResultPileWithoutPlaying(PlayerChoiceContext choiceContext)
 	{
-		ResolveAfterPlayDestination();
+		CardPile? pile = Pile;
+		if (pile != null && pile.Type == PileType.Play)
+		{
+			if (IsDupe)
+			{
+				CardPileCmd.RemoveFromCombat(this);
+			}
+			else if (ExhaustOnNextPlay || Keywords.Contains(CardKeyword.Exhaust))
+			{
+				CardCmd.Exhaust(choiceContext, this);
+			}
+			else
+			{
+				CardPileCmd.Add(this, PileType.Discard);
+			}
+		}
 		return Task.CompletedTask;
 	}
 
 	public void UpgradeInternal()
 	{
-		if (IsUpgradable)
-		{
-			CurrentUpgradeLevel++;
-			OnUpgrade();
-			Upgraded?.Invoke();
-		}
+		AssertMutable();
+		CurrentUpgradeLevel++;
+		OnUpgrade();
+		DynamicVars.RecalculateForUpgradeOrEnchant();
+		Upgraded?.Invoke();
 	}
 
 	public void FinalizeUpgradeInternal()
 	{
-		InvokeEnergyCostChanged();
-		Forged?.Invoke();
+		DynamicVars.FinalizeUpgrade();
+		EnergyCost.FinalizeUpgrade();
+		_wasStarCostJustUpgraded = false;
 	}
 
 	public void DowngradeInternal()
 	{
-		if (CurrentUpgradeLevel > 0)
-		{
-			CurrentUpgradeLevel = 0;
-			AfterDowngraded();
-		}
+		AssertMutable();
+		CurrentUpgradeLevel = 0;
+		CardModel cardModel = ModelDb.GetById<CardModel>(base.Id).ToMutable();
+		_dynamicVars = cardModel.DynamicVars.Clone(this);
+		EnergyCost.ResetForDowngrade();
+		_baseStarCost = cardModel.CanonicalStarCost;
+		_keywords = cardModel.Keywords.ToHashSet();
+		AfterDowngraded();
+		Enchantment?.ModifyCard();
+		Affliction?.AfterApplied();
+		Upgraded?.Invoke();
+	}
+
+	public void AfterForged()
+	{
+		Forged?.Invoke();
 	}
 
 	public void EnchantInternal(EnchantmentModel enchantment, decimal amount)
@@ -1120,9 +1589,33 @@ public abstract class CardModel : AbstractModel
 		EnergyCostForTurn = save.EnergyCostForTurn;
 		StarCostForTurn = save.StarCostForTurn;
 		IsFreeToPlay = save.IsFreeToPlay;
-		ExhaustOnPlay = save.ExhaustOnPlay;
-		Retain = save.Retain;
-		Ethereal = save.Ethereal;
+		if (save.State.TryGetValue(SavedKeywordsKey, out string? serializedKeywords))
+		{
+			_keywords = new HashSet<CardKeyword>();
+			foreach (string token in serializedKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+			{
+				if (Enum.TryParse(token, ignoreCase: false, out CardKeyword keyword))
+				{
+					_keywords.Add(keyword);
+				}
+			}
+		}
+		else
+		{
+			_keywords = new HashSet<CardKeyword>(CanonicalKeywords);
+			if (save.ExhaustOnPlay)
+			{
+				_keywords.Add(CardKeyword.Exhaust);
+			}
+			if (save.Retain)
+			{
+				_keywords.Add(CardKeyword.Retain);
+			}
+			if (save.Ethereal)
+			{
+				_keywords.Add(CardKeyword.Ethereal);
+			}
+		}
 		HasBeenRemovedFromState = save.HasBeenRemovedFromState;
 		CurrentPileType = save.CurrentPileType;
 		ReadCustomState(save.State);
@@ -1168,23 +1661,26 @@ public abstract class CardModel : AbstractModel
 		{
 			throw new InvalidOperationException("Cannot restore a card with no id.");
 		}
-		CardModel? card = TryCreateKernelEquivalent(save.Id.Entry);
-		if (card == null)
+		CardModel card = SaveUtil.CardOrDeprecated(save.Id).ToMutable();
+		save.Props?.Fill(card);
+		if (save.FloorAddedToDeck.HasValue)
 		{
-			throw new InvalidOperationException($"Unable to restore card '{save.Id}' in kernel runtime.");
+			card.FloorAddedToDeck = save.FloorAddedToDeck.Value;
 		}
-		card.LoadState(new mySerializableCard
+		card.AfterDeserialized();
+		if (!(card is MegaCrit.Sts2.Core.Models.Cards.DeprecatedCard))
 		{
-			Id = save.Id.Entry,
-			CurrentUpgradeLevel = save.CurrentUpgradeLevel,
-			FloorAddedToDeck = save.FloorAddedToDeck ?? 0
-		});
-		int upgradeLevel = card.CurrentUpgradeLevel;
-		card.CurrentUpgradeLevel = 0;
-		for (int i = 0; i < upgradeLevel; i++)
-		{
-			card.UpgradeInternal();
-			card.FinalizeUpgradeInternal();
+			if (save.Enchantment != null)
+			{
+				card.EnchantInternal(EnchantmentModel.FromSerializable(save.Enchantment), save.Enchantment.Amount);
+				card.Enchantment?.ModifyCard();
+				card.FinalizeUpgradeInternal();
+			}
+			for (int i = 0; i < save.CurrentUpgradeLevel; i++)
+			{
+				card.UpgradeInternal();
+				card.FinalizeUpgradeInternal();
+			}
 		}
 		return card;
 	}
