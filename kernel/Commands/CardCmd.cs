@@ -29,14 +29,17 @@ public static class CardCmd
 		{
 			return;
 		}
-		CombatState combatState = card.CombatState ?? card.Owner.Creature.CombatState;
-		target = NormalizeCardTarget(card, target);
+		CombatState? combatState = card.CombatState ?? card.Owner.Creature.CombatState;
+		if (combatState == null)
+		{
+			return;
+		}
 		if (card.Keywords.Contains(CardKeyword.Unplayable))
 		{
 			MoveToResultPileWithoutPlaying(choiceContext, card);
 			return;
 		}
-		if (!card.CanPlay(target))
+		if (!Hook.ShouldPlay(combatState, card, out AbstractModel? _, type))
 		{
 			MoveToResultPileWithoutPlaying(choiceContext, card);
 			return;
@@ -83,6 +86,7 @@ public static class CardCmd
 		{
 			CardPileCmd.Add(card, PileType.Play);
 		}
+		Hook.BeforeCardAutoPlayed(combatState, card, target, type);
 		ResourceInfo resources = new ResourceInfo
 		{
 			EnergySpent = 0,
@@ -91,11 +95,6 @@ public static class CardCmd
 			StarValue = Math.Max(0, card.GetStarCostWithModifiers())
 		};
 		card.OnPlayWrapper(choiceContext, target, isAutoPlay: true, resources, skipCardPileVisuals);
-	}
-
-	private static Creature? NormalizeCardTarget(CardModel card, Creature? target)
-	{
-		return card.TargetType == TargetType.AnyEnemy || card.TargetType == TargetType.AnyAlly ? target : null;
 	}
 
 	private static void MoveToResultPileWithoutPlaying(PlayerChoiceContext choiceContext, CardModel card)

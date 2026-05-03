@@ -39,4 +39,19 @@ public sealed class HellraiserPower : PowerModel
 			AutoplayingCards.Remove(card);
 		}
 	}
+
+	public override void BeforeAttack(AttackCommand command)
+	{
+		if (command.ModelSource is not CardModel card || !AutoplayingCards.Contains(card))
+		{
+			return;
+		}
+		Creature? attacker = command.Attacker;
+		if (attacker?.Player == null)
+		{
+			return;
+		}
+		command.WithAttackerAnim("Cast", attacker.Player.Character.CastAnimDelay).SpawningHitVfxOnEachCreature()
+			.WithHitVfxSpawnedAtBase();
+	}
 }

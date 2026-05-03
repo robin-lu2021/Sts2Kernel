@@ -1351,6 +1351,10 @@ public abstract class CardModel : AbstractModel
 		CurrentTarget = target;
 		try
 		{
+			if (isAutoPlay)
+			{
+				CardPileCmd.Add(this, PileType.Play, CardPilePosition.Bottom, null, skipCardPileVisuals);
+			}
 			CombatState? cs = CombatState;
 			PileType resultPileType = GetResultPileType();
 			CardPilePosition resultPilePosition = CardPilePosition.Bottom;
